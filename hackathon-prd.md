@@ -720,9 +720,10 @@ interface IYieldAdapter {
 ```
 
 **Implementations we'll build:**
-- `AaveV3Adapter` — wraps Aave V3 on Base
-- `MorphoAdapter` — wraps Morpho Blue vaults
+- `MorphoAdapter` — wraps Morpho Blue MetaMorpho vaults (ERC-4626 compliant, highest APY)
 - `MockYieldVault` — for testing and demo
+
+**Note:** Aave and Moonwell adapters are not built for MVP. The yield aggregator fetches their rates for UI display, but all actual deposits go to Morpho vaults which currently offer the best yields (5-7% APY).
 
 ### 5.5 Paymaster
 
@@ -1259,12 +1260,28 @@ Contracts are not upgradeable. This prevents:
 
 ### 8.3 Yield Sources
 
-| Protocol | Type | Token | Adapter |
-|----------|------|-------|---------|
-| Aave V3 | Lending | USDC | `AaveV3Adapter.sol` |
-| Morpho Blue | Lending | USDC | `MorphoAdapter.sol` |
-| Moonwell | Lending | USDC | `MoonwellAdapter.sol` (stretch) |
-| Mock Vault | Testing | USDC | `MockYieldVault.sol` |
+**Backend Yield Aggregator (for display/comparison):**
+
+The yield fetcher aggregates data from multiple protocols for UI display and rate comparison:
+
+| Protocol | Type | Token | Status |
+|----------|------|-------|--------|
+| Morpho Blue | Lending | USDC | Integrated (GraphQL API) |
+| Aave V3 | Lending | USDC | Integrated (GraphQL API) |
+| Moonwell | Lending | USDC | Integrated (Moonwell SDK) |
+
+**Smart Contract Adapters (for actual deposits):**
+
+For MVP, we only build the Morpho adapter since Morpho vaults consistently offer the highest APY (5-7% vs Aave's ~3% and Moonwell's ~5.8%). All Morpho MetaMorpho vaults are ERC-4626 compliant, making integration straightforward.
+
+| Protocol | Adapter | Status |
+|----------|---------|--------|
+| Morpho Blue | `MorphoAdapter.sol` | **Build this** |
+| Aave V3 | — | Skip (lower APY, more complex) |
+| Moonwell | — | Skip (lower APY, Compound-style interface) |
+| Mock Vault | `MockYieldVault.sol` | For testing only |
+
+**Rationale:** Building additional adapters for Aave and Moonwell adds development time for protocols that currently offer lower yields. The UI can still display all three protocols' rates to show the aggregator is "smart" while the contracts only interact with the winning protocol (Morpho).
 
 ### 8.4 DEX (Dust Swaps)
 
@@ -1320,9 +1337,10 @@ Contracts are not upgradeable. This prevents:
 | C2 | `AutopilotFactory.sol` | Deploys wallets with module installed | Kernel, AutoYieldModule |
 | C3 | `IYieldAdapter.sol` | Interface for vault adapters | — |
 | C4 | `MockYieldVault.sol` | ERC-4626 mock for testing | IYieldAdapter |
-| C5 | `AaveV3Adapter.sol` | Adapter for Aave V3 on Base | IYieldAdapter |
-| C6 | `MorphoAdapter.sol` | Adapter for Morpho Blue | IYieldAdapter |
-| C7 | Dual-key validation | Configure Kernel for automation key | Kernel |
+| C5 | `MorphoAdapter.sol` | Adapter for Morpho Blue (ERC-4626) | IYieldAdapter |
+| C6 | Dual-key validation | Configure Kernel for automation key | Kernel |
+
+**Note:** We only build the Morpho adapter for MVP. Morpho MetaMorpho vaults are ERC-4626 compliant and currently offer the best APY (5-7%). The yield aggregator fetches rates from Morpho, Aave, and Moonwell for UI display, but contracts only deposit to Morpho vaults.
 
 **Acceptance Criteria:**
 - Wallet deploys with module pre-installed
