@@ -4,11 +4,13 @@
  * Fetches and aggregates yield vault data from multiple protocols:
  * - Morpho Blue (via GraphQL API)
  * - Aave V3 (via GraphQL API)
+ * - Moonwell (via Moonwell SDK)
  *
  * Returns unified vault data sorted by APY for strategy selection.
  */
 
 import axios, { AxiosError } from "axios";
+import { createMoonwellClient } from "@moonwell-fi/moonwell-sdk";
 
 // =============================================================================
 // Configuration
@@ -54,7 +56,7 @@ export interface Vault {
   tvlUsd: number;
 
   // Metadata
-  source: "morpho" | "aave";
+  source: "morpho" | "aave" | "moonwell";
   chainId: number;
   underlyingAsset: string;
   underlyingAssetAddress: string;
@@ -367,6 +369,84 @@ async function getAaveVaults(
 }
 
 // =============================================================================
+// Moonwell Fetcher (via SDK)
+// =============================================================================
+
+// Create a singleton Moonwell client for Base
+const moonwellClient = createMoonwellClient({
+  networks: {
+    base: {
+      rpcUrls: ["https://mainnet.base.org", "https://base.llamarpc.com"],
+    },
+  },
+});
+
+/**
+ * Fetch markets from Moonwell via SDK
+ *
+ * Moonwell is a native Base lending protocol similar to Aave/Compound.
+ * The SDK provides direct access to market data including APY and TVL.
+ */
+async function getMoonwellVaults(
+  assetSymbol: string,
+  chainId: number
+): Promise<Vault[]> {
+  // Moonwell SDK only supports specific chains
+  if (chainId !== BASE_CHAIN_ID) {
+    console.log(`Moonwell: Chain ${chainId} not supported, only Base (8453)`);
+    return [];
+  }
+
+  const markets = await moonwellClient.getMarkets({
+    includeLiquidStakingRewards: true,
+  });
+
+  if (!markets || markets.length === 0) {
+    console.log("Moonwell: No markets found");
+    return [];
+  }
+
+  const vaults: Vault[] = [];
+
+  for (const market of markets) {
+    // Filter by asset symbol
+    if (market.underlyingToken.symbol !== assetSymbol) continue;
+
+    // Skip paused markets
+    if (market.mintPaused) continue;
+
+    // Moonwell SDK returns APY/APR as percentages (e.g., 5.83 = 5.83%)
+    // We normalize to decimals (0.0583) to match Morpho/Aave format
+    const totalApr = (market.totalSupplyApr || 0) / 100;
+    const baseApy = (market.baseSupplyApy || 0) / 100;
+
+    // Map rewards to our format (also normalize from percentage to decimal)
+    const rewards: Reward[] = (market.rewards || [])
+      .filter((r) => r.supplyApr > 0)
+      .map((r) => ({
+        symbol: r.token.symbol,
+        apy: r.supplyApr / 100,
+      }));
+
+    vaults.push({
+      name: `Moonwell ${market.underlyingToken.symbol}`,
+      address: market.marketToken.address,
+      symbol: market.marketToken.symbol,
+      tvlUsd: market.totalSupplyUsd || 0,
+      apy: totalApr, // Total APR (base + rewards)
+      baseApy: baseApy,
+      rewards,
+      source: "moonwell",
+      chainId: market.chainId,
+      underlyingAsset: market.underlyingToken.symbol,
+      underlyingAssetAddress: market.underlyingToken.address,
+    });
+  }
+
+  return vaults;
+}
+
+// =============================================================================
 // Main Aggregator
 // =============================================================================
 
@@ -389,15 +469,17 @@ export async function getBestVaults(
 
   const errors: string[] = [];
 
-  // Fetch from both sources in parallel
-  const [morphoResult, aaveResult] = await Promise.allSettled([
+  // Fetch from all sources in parallel
+  const [morphoResult, aaveResult, moonwellResult] = await Promise.allSettled([
     getMorphoVaults(assetSymbol, chainId, excludeWarnings),
     getAaveVaults(assetSymbol, chainId),
+    getMoonwellVaults(assetSymbol, chainId),
   ]);
 
   // Collect vaults and errors
   let morphoVaults: Vault[] = [];
   let aaveVaults: Vault[] = [];
+  let moonwellVaults: Vault[] = [];
 
   if (morphoResult.status === "fulfilled") {
     morphoVaults = morphoResult.value;
@@ -423,8 +505,17 @@ export async function getBestVaults(
     console.error(message);
   }
 
+  if (moonwellResult.status === "fulfilled") {
+    moonwellVaults = moonwellResult.value;
+  } else {
+    const error = moonwellResult.reason;
+    const message = `Moonwell fetch error: ${String(error)}`;
+    errors.push(message);
+    console.error(message);
+  }
+
   // Merge all vaults
-  let allVaults = [...morphoVaults, ...aaveVaults];
+  let allVaults = [...morphoVaults, ...aaveVaults, ...moonwellVaults];
 
   // Filter by minimum TVL
   if (minTvlUsd > 0) {
