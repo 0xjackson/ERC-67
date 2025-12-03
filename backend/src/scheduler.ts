@@ -16,8 +16,9 @@ import {
   SchedulerStatus,
   TaskExecutionResult,
   RiskTier,
+  DataSource,
 } from "./types";
-import { getBestStrategy, getRecommendedStrategies, DEFAULTS } from "./strategyService";
+import { getRecommendedStrategies, DEFAULTS } from "./strategyService";
 
 // ============================================================================
 // Configuration
@@ -237,14 +238,15 @@ export async function executeTask(
     // Get the best strategy for this task
     let strategyId: string;
     let strategyScore: number | undefined;
+    let dataSource: DataSource = "mock";
 
     if (task.preferredStrategyId) {
       // Use preferred strategy if specified
       strategyId = task.preferredStrategyId;
       log(logSource, `  Using preferred strategy: ${strategyId}`);
     } else {
-      // Find best strategy based on risk tolerance
-      const result = getRecommendedStrategies(
+      // Find best strategy based on risk tolerance (now async)
+      const result = await getRecommendedStrategies(
         task.token,
         task.chainId,
         task.riskTolerance,
@@ -257,9 +259,24 @@ export async function executeTask(
 
       strategyId = result.bestStrategy.id;
       strategyScore = result.bestStrategy.score;
+      dataSource = result.metadata.dataSource;
+
+      const adapterAddr = result.bestStrategy.adapterAddress || "none";
+      const shortAdapter = adapterAddr.length > 20
+        ? `${adapterAddr.substring(0, 16)}...${adapterAddr.substring(adapterAddr.length - 4)}`
+        : adapterAddr;
+
+      log(
+        logSource,
+        `  Data source: ${dataSource.toUpperCase()}${result.metadata.fetchedAt ? ` (fetched: ${result.metadata.fetchedAt})` : ""}`
+      );
       log(
         logSource,
         `  Best strategy: ${strategyId} (score: ${strategyScore.toFixed(2)}, APY: ${(result.bestStrategy.apy * 100).toFixed(1)}%)`
+      );
+      log(
+        logSource,
+        `  Adapter: ${shortAdapter}`
       );
     }
 
