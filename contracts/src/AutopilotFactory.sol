@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.23;
 
-import {IKernel, IKernelFactory, IHook, ValidationId, ValidatorLib, MODULE_TYPE_EXECUTOR} from "./interfaces/IKernel.sol";
+import {IKernel, IKernelFactory, IHook, ValidationId, ValidatorLib, MODULE_TYPE_EXECUTOR, MODULE_TYPE_VALIDATOR} from "./interfaces/IKernel.sol";
 import {AutoYieldModule} from "./AutoYieldModule.sol";
+import {AutomationValidator} from "./AutomationValidator.sol";
 
 /**
  * @title AutopilotFactory
@@ -34,6 +35,15 @@ contract AutopilotFactory {
     /// @notice ERC-7579 module type for executor modules
     uint256 private constant EXECUTOR_MODULE_TYPE = MODULE_TYPE_EXECUTOR;
 
+    /// @notice ERC-7579 module type for validator modules
+    uint256 private constant VALIDATOR_MODULE_TYPE = MODULE_TYPE_VALIDATOR;
+
+    /// @notice Allowed selectors for automation key
+    /// rebalance(address)
+    bytes4 private constant SELECTOR_REBALANCE = 0x21c28191;
+    /// migrateStrategy(address,address)
+    bytes4 private constant SELECTOR_MIGRATE = 0x6cb56d19;
+
     /// @notice Default checking threshold (100 USDC with 6 decimals)
     uint256 public constant DEFAULT_THRESHOLD = 100e6;
 
@@ -47,6 +57,9 @@ contract AutopilotFactory {
 
     /// @notice The AutoYieldModule implementation
     address public immutable autoYieldModule;
+
+    /// @notice The AutomationValidator for session key signatures
+    address public immutable automationValidator;
 
     // ============ State ============
 
@@ -72,6 +85,7 @@ contract AutopilotFactory {
      * @param _kernelFactory Address of the deployed KernelFactory
      * @param _ecdsaValidator Address of the ECDSA validator module
      * @param _autoYieldModule Address of the AutoYieldModule implementation
+     * @param _automationValidator Address of the AutomationValidator implementation
      * @param _defaultAdapter Address of the default YieldAdapter
      * @param _automationKey Address of the global automation key
      */
@@ -79,17 +93,20 @@ contract AutopilotFactory {
         address _kernelFactory,
         address _ecdsaValidator,
         address _autoYieldModule,
+        address _automationValidator,
         address _defaultAdapter,
         address _automationKey
     ) {
         if (_kernelFactory == address(0)) revert ZeroAddress();
         if (_ecdsaValidator == address(0)) revert ZeroAddress();
         if (_autoYieldModule == address(0)) revert ZeroAddress();
+        if (_automationValidator == address(0)) revert ZeroAddress();
         if (_defaultAdapter == address(0)) revert ZeroAddress();
 
         kernelFactory = IKernelFactory(_kernelFactory);
         ecdsaValidator = _ecdsaValidator;
         autoYieldModule = _autoYieldModule;
+        automationValidator = _automationValidator;
         defaultAdapter = _defaultAdapter;
         automationKey = _automationKey;
         defaultThreshold = DEFAULT_THRESHOLD;
@@ -204,10 +221,8 @@ contract AutopilotFactory {
      *
      * @dev The initialization:
      *      1. Sets ECDSA validator as root (owner can sign userOps)
-     *      2. Installs AutoYieldModule as executor with:
-     *         - Default adapter
-     *         - Global automation key
-     *         - Default threshold
+     *      2. Installs AutoYieldModule as executor
+     *      3. Installs AutomationValidator for session key automation
      */
     function _buildInitData(address owner) internal view returns (bytes memory) {
         // Create ValidationId for ECDSA validator
@@ -220,18 +235,37 @@ contract AutopilotFactory {
         IHook noHook = IHook(address(0));
         bytes memory hookData = "";
 
-        // Build module init data: (defaultAdapter, automationKey, defaultThreshold)
-        bytes memory moduleInitData = abi.encode(
+        // Build AutoYieldModule init data: (defaultAdapter, automationKey, defaultThreshold)
+        bytes memory executorInitData = abi.encode(
             defaultAdapter,
             automationKey,
             defaultThreshold
         );
 
-        // Build initConfig to install AutoYieldModule
-        bytes[] memory initConfig = new bytes[](1);
+        // Build AutomationValidator init data: (automationKey, autoYieldModule, selectors[])
+        bytes4[] memory allowedSelectors = new bytes4[](2);
+        allowedSelectors[0] = SELECTOR_REBALANCE;
+        allowedSelectors[1] = SELECTOR_MIGRATE;
+
+        bytes memory validatorInitData = abi.encode(
+            automationKey,
+            autoYieldModule,
+            allowedSelectors
+        );
+
+        // Build initConfig to install both modules
+        bytes[] memory initConfig = new bytes[](2);
+
+        // Install AutoYieldModule as executor
         initConfig[0] = abi.encodeCall(
             IKernel.installModule,
-            (EXECUTOR_MODULE_TYPE, autoYieldModule, moduleInitData)
+            (EXECUTOR_MODULE_TYPE, autoYieldModule, executorInitData)
+        );
+
+        // Install AutomationValidator as secondary validator
+        initConfig[1] = abi.encodeCall(
+            IKernel.installModule,
+            (VALIDATOR_MODULE_TYPE, automationValidator, validatorInitData)
         );
 
         // Encode the full initialize call
