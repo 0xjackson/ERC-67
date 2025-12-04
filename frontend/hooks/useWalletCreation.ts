@@ -158,12 +158,12 @@ export function useWalletCreation(): UseWalletCreationReturn {
 
         const salt = generateSalt(ownerAddress);
 
-        // Submit the actual transaction
+        // Submit the actual transaction - createAccount only takes salt, msg.sender is owner
         writeContract({
           address: CONTRACTS.FACTORY,
           abi: FACTORY_ABI,
           functionName: "createAccount",
-          args: [ownerAddress, salt],
+          args: [salt],
         });
 
         // The rest of the flow will be handled by the transaction confirmation
