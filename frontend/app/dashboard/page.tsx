@@ -1,107 +1,85 @@
 "use client";
 
-import { useState } from "react";
-import {
-  mockBalances,
-  mockYieldStrategy,
-  mockTransactions,
-} from "@/lib/mock-data";
+import { useAutopilot } from "@/contexts/AutopilotContext";
 
 export default function DashboardPage() {
-  const [isRebalancing, setIsRebalancing] = useState(false);
+  const {
+    walletAddress,
+    checkingBalance,
+    yieldBalance,
+    totalBalance,
+    currentStrategy,
+    isLoading,
+    isPolling,
+    refreshBalances,
+  } = useAutopilot();
 
-  const handleRebalance = () => {
-    setIsRebalancing(true);
-    // Simulate rebalance action
-    setTimeout(() => {
-      setIsRebalancing(false);
-      alert("Rebalance complete (mock)");
-    }, 1500);
-  };
+  if (isLoading) {
+    return <div className="p-8">Loading...</div>;
+  }
+
+  if (!walletAddress) {
+    return (
+      <div className="p-8">
+        <p>No wallet found. Please create one first.</p>
+        <a href="/create" className="text-blue-400 hover:underline">
+          Create Wallet →
+        </a>
+      </div>
+    );
+  }
+
+  const formatApy = (apy: number) => `${(apy * 100).toFixed(2)}%`;
 
   return (
-    <div className="space-y-8">
-      <h1 className="text-3xl font-bold">Dashboard</h1>
+    <div className="space-y-8 p-8">
+      <div className="flex items-center justify-between">
+        <h1 className="text-3xl font-bold">Dashboard</h1>
+        <button
+          onClick={refreshBalances}
+          disabled={isPolling}
+          className="text-sm text-gray-400 hover:text-white"
+        >
+          {isPolling ? "Refreshing..." : "Refresh"}
+        </button>
+      </div>
 
       {/* Balance Cards */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         <div className="bg-gray-900 rounded-lg p-6 border border-gray-800">
           <p className="text-gray-400 text-sm">Checking Balance</p>
-          <p className="text-2xl font-bold mt-1">${mockBalances.checking}</p>
+          <p className="text-2xl font-bold mt-1">
+            ${checkingBalance || "0.00"}
+          </p>
           <p className="text-gray-500 text-xs mt-1">Available for spending</p>
         </div>
 
         <div className="bg-gray-900 rounded-lg p-6 border border-gray-800">
           <p className="text-gray-400 text-sm">Yield Balance</p>
           <p className="text-2xl font-bold mt-1 text-green-400">
-            ${mockBalances.yield}
+            ${yieldBalance || "0.00"}
           </p>
           <p className="text-gray-500 text-xs mt-1">
-            {mockYieldStrategy.name} • {mockYieldStrategy.apy} APY
+            {currentStrategy
+              ? `${currentStrategy.name} • ${formatApy(currentStrategy.apy)} APY`
+              : "Not earning yield"
+            }
           </p>
         </div>
 
         <div className="bg-gray-900 rounded-lg p-6 border border-gray-800">
           <p className="text-gray-400 text-sm">Total Balance</p>
-          <p className="text-2xl font-bold mt-1">${mockBalances.total}</p>
+          <p className="text-2xl font-bold mt-1">
+            ${totalBalance || "0.00"}
+          </p>
           <p className="text-gray-500 text-xs mt-1">USDC</p>
         </div>
       </div>
 
-      {/* Rebalance Section */}
+      {/* Wallet Address */}
       <div className="bg-gray-900 rounded-lg p-6 border border-gray-800">
-        <div className="flex items-center justify-between">
-          <div>
-            <h2 className="text-lg font-semibold">Auto-Yield Status</h2>
-            <p className="text-gray-400 text-sm mt-1">
-              Your wallet automatically manages yield allocation
-            </p>
-          </div>
-          <button
-            onClick={handleRebalance}
-            disabled={isRebalancing}
-            className="bg-blue-600 hover:bg-blue-700 disabled:bg-blue-800 disabled:cursor-not-allowed px-6 py-2 rounded-lg font-medium transition-colors"
-          >
-            {isRebalancing ? "Rebalancing..." : "Rebalance Now"}
-          </button>
-        </div>
-      </div>
-
-      {/* Recent Activity */}
-      <div className="bg-gray-900 rounded-lg p-6 border border-gray-800">
-        <h2 className="text-lg font-semibold mb-4">Recent Activity</h2>
-        <div className="space-y-3">
-          {mockTransactions.map((tx) => (
-            <div
-              key={tx.id}
-              className="flex items-center justify-between py-3 border-b border-gray-800 last:border-0"
-            >
-              <div>
-                <p className="font-medium capitalize">
-                  {tx.type.replace("_", " ")}
-                </p>
-                <p className="text-gray-500 text-sm">
-                  {tx.timestamp.toLocaleString()}
-                </p>
-              </div>
-              <div className="text-right">
-                <p
-                  className={`font-medium ${
-                    tx.type === "receive" || tx.type === "yield_withdraw"
-                      ? "text-green-400"
-                      : ""
-                  }`}
-                >
-                  {tx.type === "receive" || tx.type === "yield_withdraw"
-                    ? "+"
-                    : "-"}
-                  ${tx.amount} {tx.token}
-                </p>
-                <p className="text-gray-500 text-xs capitalize">{tx.status}</p>
-              </div>
-            </div>
-          ))}
-        </div>
+        <p className="text-gray-400 text-sm">Wallet Address</p>
+        <p className="text-sm font-mono mt-1">{walletAddress}</p>
       </div>
     </div>
   );

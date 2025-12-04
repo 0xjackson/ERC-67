@@ -77,7 +77,21 @@ export type SweepDustRequest = {
 };
 
 export type GetStrategiesParams = {
+  token?: string;
   chainId?: number;
+};
+
+export type GetRecommendationParams = {
+  chainId?: number;
+};
+
+export type GetDustTokensParams = {
+  chainId?: number;
+};
+
+export type GetDustSummaryParams = {
+  chainId?: number;
+  consolidation?: string;
 };
 
 // ============================================================================
@@ -110,6 +124,28 @@ export type StrategiesResponse = {
   token: string;
   chainId: number;
   strategies: Strategy[];
+};
+
+export type RecommendResponse = {
+  token: string;
+  chainId: number;
+  strategy: Strategy;
+};
+
+export type DustTokensResponse = {
+  chainId: number;
+  tokens: DustTokenMeta[];
+  totalCount: number;
+  dustSourceCount: number;
+};
+
+export type DustSummaryResponse = {
+  wallet: string;
+  chainId: number;
+  consolidationToken: string;
+  dustBalances: DustBalance[];
+  totalDustValueUsd?: number;
+  note: string;
 };
 
 export type ErrorResponse = {
@@ -171,7 +207,9 @@ function unwrapServerError(error: unknown): never {
 // ============================================================================
 
 function createAxiosInstance(): AxiosInstance {
-  const baseURL = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:3001";
+  const baseURL =
+    process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001";
+  console.log("[API Client] Base URL:", baseURL);
   const timeout = parseInt(process.env.NEXT_PUBLIC_API_TIMEOUT_MS ?? "30000", 10);
 
   const instance = axios.create({
@@ -201,7 +239,16 @@ export interface AutopilotAPI {
   pay(request: PayRequest): Promise<PayResponse>;
   rebalance(request: RebalanceRequest): Promise<RebalanceResponse>;
   sweepDust(request: SweepDustRequest): Promise<SweepDustResponse>;
-  getStrategies(token: string, params?: GetStrategiesParams): Promise<StrategiesResponse>;
+  getStrategies(params?: GetStrategiesParams): Promise<StrategiesResponse>;
+  getRecommendation(
+    token: string,
+    params?: GetRecommendationParams
+  ): Promise<RecommendResponse>;
+  getDustTokens(params?: GetDustTokensParams): Promise<DustTokensResponse>;
+  getDustSummary(
+    walletAddress: string,
+    params?: GetDustSummaryParams
+  ): Promise<DustSummaryResponse>;
 }
 
 async function pay(request: PayRequest): Promise<PayResponse> {
@@ -215,7 +262,10 @@ async function pay(request: PayRequest): Promise<PayResponse> {
 
 async function rebalance(request: RebalanceRequest): Promise<RebalanceResponse> {
   try {
-    const response = await axiosInstance.post<RebalanceResponse>("/ops/rebalance", request);
+    const response = await axiosInstance.post<RebalanceResponse>(
+      "/ops/rebalance",
+      request
+    );
     return response.data;
   } catch (error) {
     unwrapServerError(error);
@@ -224,21 +274,94 @@ async function rebalance(request: RebalanceRequest): Promise<RebalanceResponse> 
 
 async function sweepDust(request: SweepDustRequest): Promise<SweepDustResponse> {
   try {
-    const response = await axiosInstance.post<SweepDustResponse>("/ops/dust", request);
+    const response = await axiosInstance.post<SweepDustResponse>(
+      "/ops/dust",
+      request
+    );
     return response.data;
   } catch (error) {
     unwrapServerError(error);
   }
 }
 
+/**
+ * GET /strategies
+ * Returns all active strategies for a given token and chain, sorted by APY descending.
+ *
+ * @param params.token - Token symbol (default: "USDC")
+ * @param params.chainId - Chain ID (default: 8453 for Base)
+ */
 async function getStrategies(
-  token: string,
   params?: GetStrategiesParams
 ): Promise<StrategiesResponse> {
   try {
-    const response = await axiosInstance.get<StrategiesResponse>(
-      `/strategies/${encodeURIComponent(token)}`,
-      { params }
+    const response = await axiosInstance.get<StrategiesResponse>("/strategies", {
+      params,
+    });
+    return response.data;
+  } catch (error) {
+    unwrapServerError(error);
+  }
+}
+
+/**
+ * GET /recommend
+ * Returns the single highest-APY strategy for a given token and chain.
+ *
+ * @param token - Token symbol (e.g., "USDC", "WETH")
+ * @param params.chainId - Chain ID (default: 8453 for Base)
+ */
+async function getRecommendation(
+  token: string,
+  params?: GetRecommendationParams
+): Promise<RecommendResponse> {
+  try {
+    const response = await axiosInstance.get<RecommendResponse>("/recommend", {
+      params: { token, ...params },
+    });
+    return response.data;
+  } catch (error) {
+    unwrapServerError(error);
+  }
+}
+
+/**
+ * GET /dust/tokens
+ * Returns all dust token metadata for a chain.
+ *
+ * @param params.chainId - Chain ID (default: 8453 for Base)
+ */
+async function getDustTokens(
+  params?: GetDustTokensParams
+): Promise<DustTokensResponse> {
+  try {
+    const response = await axiosInstance.get<DustTokensResponse>("/dust/tokens", {
+      params,
+    });
+    return response.data;
+  } catch (error) {
+    unwrapServerError(error);
+  }
+}
+
+/**
+ * GET /dust/summary
+ * Returns dust summary for a wallet (currently returns mock data).
+ *
+ * @param walletAddress - Wallet address (0x...)
+ * @param params.chainId - Chain ID (default: 8453 for Base)
+ * @param params.consolidation - Consolidation token symbol (default: "USDC")
+ */
+async function getDustSummary(
+  walletAddress: string,
+  params?: GetDustSummaryParams
+): Promise<DustSummaryResponse> {
+  try {
+    const response = await axiosInstance.get<DustSummaryResponse>(
+      "/dust/summary",
+      {
+        params: { wallet: walletAddress, ...params },
+      }
     );
     return response.data;
   } catch (error) {
@@ -255,6 +378,17 @@ export const autopilotApi: AutopilotAPI = {
   rebalance,
   sweepDust,
   getStrategies,
+  getRecommendation,
+  getDustTokens,
+  getDustSummary,
+};
+
+// Also export individual functions for direct imports
+export {
+  getStrategies,
+  getRecommendation,
+  getDustTokens,
+  getDustSummary,
 };
 
 export default autopilotApi;

@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Inter } from "next/font/google";
 import "./globals.css";
 import { WalletProvider } from "@/components/WalletProvider";
+import { AutopilotProvider } from "@/contexts/AutopilotContext";
 import { Navigation } from "@/components/Navigation";
 
 const inter = Inter({ subsets: ["latin"] });
@@ -20,8 +21,10 @@ export default function RootLayout({
     <html lang="en">
       <body className={`${inter.className} bg-gray-950 text-white min-h-screen`}>
         <WalletProvider>
-          <Navigation />
-          <main className="max-w-6xl mx-auto px-4 py-8">{children}</main>
+          <AutopilotProvider>
+            <Navigation />
+            <main className="max-w-6xl mx-auto px-4 py-8">{children}</main>
+          </AutopilotProvider>
         </WalletProvider>
       </body>
     </html>
