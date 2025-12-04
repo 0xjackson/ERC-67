@@ -93,7 +93,7 @@ async function testFullFlow(walletAddress: Address) {
     functionName: "execute",
     args: [EXEC_MODE_DEFAULT, executionCalldata],
   });
-  log("Calldata", "ok", `${callData.length} chars`);
+  log("Calldata", "ok", `${callData.length} chars (selector: ${callData.slice(0, 10)})`);
 
   // Use fixed gas limits (CDP bundler can't estimate with dummy signature)
   const verificationGasLimit = 500000n;

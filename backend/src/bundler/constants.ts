@@ -1,9 +1,9 @@
 import type { Address } from "viem";
 
 export const CONTRACTS = {
-  FACTORY: (process.env.FACTORY_ADDRESS || "0xcf10279BAA0d5407Dbb637517d23055A55E72923") as Address,
+  FACTORY: (process.env.FACTORY_ADDRESS || "0xFBb91eb4234558b191c393985eF34282B551e81B") as Address,
   MODULE: (process.env.AUTO_YIELD_MODULE_ADDRESS || "0x71b5A4663A49FF02BE672Ea9560256D2268727B7") as Address,
-  VALIDATOR: "0xe29ed376a2780f653C14EEC203eD25094c0E772A" as Address,
+  VALIDATOR: "0x47A6b2f3bD564F9DeA17AcF8AbE73890c546900b" as Address,
   ADAPTER: "0x42EFecD83447e5b90c5F706309FaC8f9615bd68F" as Address,
   USDC: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913" as Address,
   ENTRYPOINT: "0x0000000071727De22E5E9d8BAf0edAc6f37da032" as Address,
@@ -39,7 +39,8 @@ export const AUTO_YIELD_MODULE_ABI = [
   },
 ] as const;
 
-// Kernel v3 uses ERC-7579 execute format
+// Kernel v3 ERC-7579 execute format
+// Selector: 0xe9ae5c53
 export const KERNEL_EXECUTE_ABI = [
   {
     name: "execute",

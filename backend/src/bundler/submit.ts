@@ -32,6 +32,7 @@ async function submitAutomationUserOp(
   const signer = getAutomationSigner();
   console.log(`[bundler] Signer: ${signer.address}, Wallet: ${walletAddress}`);
 
+  // ERC-7579 execution calldata: abi.encodePacked(target, value, callData)
   const executionCalldata = concat([
     CONTRACTS.MODULE,
     pad(toHex(0n), { size: 32 }),
