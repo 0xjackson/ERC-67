@@ -15,8 +15,9 @@ import {AutoYieldModule} from "./AutoYieldModule.sol";
  *      - Global automation key registered for all wallets
  *      - Default adapter and threshold configured
  *
- *      Kernel v3.3 addresses (same on all chains):
+ *      Kernel v3.3 addresses (same on all EVM chains):
  *      - Factory: 0x2577507b78c2008Ff367261CB6285d44ba5eF2E9
+ *      - Implementation: 0xd6CEDDe84be40893d153Be9d467CD6aD37875b28
  *      - ECDSA Validator: 0x845ADb2C711129d4f3966735eD98a9F09fC4cE57
  */
 contract AutopilotFactory {

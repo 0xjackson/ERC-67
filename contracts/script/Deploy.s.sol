@@ -20,8 +20,8 @@ import {AutopilotFactory} from "../src/AutopilotFactory.sol";
 contract Deploy is Script {
     // ============ Base Mainnet Addresses ============
 
-    /// @notice ZeroDev Kernel Factory (v3.1)
-    address constant KERNEL_FACTORY = 0x5de4839a76cf55d0c90e2061ef4386d962E15ae3;
+    /// @notice ZeroDev Kernel Factory (v3.3)
+    address constant KERNEL_FACTORY = 0x2577507b78c2008Ff367261CB6285d44ba5eF2E9;
 
     /// @notice ZeroDev ECDSA Validator
     address constant ECDSA_VALIDATOR = 0x845ADb2C711129d4f3966735eD98a9F09fC4cE57;

@@ -16,9 +16,9 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
  */
 contract TestDeployment is Script {
     // Deployed contract addresses
-    AutoYieldModule constant MODULE = AutoYieldModule(0xdC5ec0628ff1c0063A2d2B13B3FbBD9431aE4a10);
-    MorphoAdapter constant ADAPTER = MorphoAdapter(0x33fD350a1ecE1239B880B3b3f91eb39407A7eDf9);
-    AutopilotFactory constant FACTORY = AutopilotFactory(0xa508485E1F6990255B17063C5368BC02eACffa6f);
+    AutoYieldModule constant MODULE = AutoYieldModule(0xC35Eeb30a36d1ac157B41719BEAf513a0C557Bce);
+    MorphoAdapter constant ADAPTER = MorphoAdapter(0x8438E34f258044cf656EBA796B8559bA1ee3020a);
+    AutopilotFactory constant FACTORY = AutopilotFactory(0xc627874FE7444f8e9750e5043c19bA01E990D581);
 
     // External addresses
     address constant USDC = 0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913;
