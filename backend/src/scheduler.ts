@@ -1,15 +1,8 @@
 /**
- * B3: Auto-rebalance Scheduler
+ * Auto-rebalance Scheduler
  *
- * A lightweight scheduler that periodically checks wallets and triggers
- * maintenance actions like rebalance() or flushToChecking().
- *
- * NOTE: Tasks are stored in-memory and will reset on server restart.
- * TODO: Persist tasks to database or config file for production use.
- *
- * B6 UPDATE: Now integrated with bundler.ts to submit real UserOperations
- * via CDP bundler. Requires CDP_BUNDLER_URL, AUTOMATION_PRIVATE_KEY, and
- * AUTO_YIELD_MODULE_ADDRESS to be configured in .env.
+ * Periodically checks wallets and triggers maintenance actions.
+ * Submits real UserOperations when bundler is configured.
  */
 
 import {
@@ -29,22 +22,20 @@ import {
   submitSweepDustUserOp,
   USDC_ADDRESS,
 } from "./bundler/index";
+import {
+  checkWalletsForRebalance,
+  initChainReader,
+  formatUSDC,
+  WalletCheckResult,
+} from "./chainReader";
+import { getRegisteredWallets } from "./server";
 import type { Address } from "viem";
 
-// ============================================================================
-// Configuration
-// ============================================================================
-
-/** Default interval between scheduler ticks (30 seconds) */
 const DEFAULT_TICK_INTERVAL_MS = 30 * 1000;
-
-/** Default interval between task runs (5 minutes) */
+const DEFAULT_REGISTRY_CHECK_INTERVAL_MS = 10 * 1000;
 const DEFAULT_TASK_INTERVAL_MS = 5 * 60 * 1000;
-
-/** Maximum consecutive errors before disabling a task */
 const MAX_ERROR_COUNT = 5;
 
-/** Check if bundler is properly configured */
 function isBundlerConfigured(): boolean {
   return !!(
     process.env.CDP_BUNDLER_URL &&
@@ -53,82 +44,43 @@ function isBundlerConfigured(): boolean {
   );
 }
 
-/** Whether to actually submit UserOps (vs simulation mode) */
 let bundlerEnabled = false;
-
-// ============================================================================
-// In-memory storage
-// ============================================================================
-
-/** Map of task ID -> RebalanceTask */
 const tasks: Map<string, RebalanceTask> = new Map();
-
-/** Scheduler interval handle */
 let schedulerInterval: NodeJS.Timeout | null = null;
-
-/** Whether the scheduler is currently running */
 let isRunning = false;
-
-/** Timestamp of last scheduler tick */
 let lastTickAt: Date | undefined;
-
-/** Current tick interval */
 let tickIntervalMs = DEFAULT_TICK_INTERVAL_MS;
+let registryCheckInterval: NodeJS.Timeout | null = null;
+let registryCheckIntervalMs = DEFAULT_REGISTRY_CHECK_INTERVAL_MS;
+let lastRegistryCheckAt: Date | undefined;
+let chainReaderInitialized = false;
 
-// ============================================================================
-// Utility functions
-// ============================================================================
-
-/**
- * Generate a unique task ID
- */
 function generateTaskId(): string {
   return `task_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
 }
 
-/**
- * Validate wallet address format (basic check)
- */
 export function isValidWalletAddress(address: string): boolean {
   return /^0x[a-fA-F0-9]{40}$/.test(address);
 }
 
-/**
- * Validate task action
- */
 export function isValidTaskAction(action: string): action is TaskAction {
   return action === "rebalance" || action === "flushToChecking" || action === "sweepDust";
 }
 
-/**
- * Format timestamp for logging
- */
 function formatTime(date: Date): string {
   return date.toISOString().replace("T", " ").substring(0, 19);
 }
 
-/**
- * Log a scheduler message with timestamp
- */
 function log(source: string, message: string): void {
   const timestamp = formatTime(new Date());
   console.log(`[${timestamp}] [scheduler${source ? ":" + source : ""}] ${message}`);
 }
 
-// ============================================================================
-// Task management
-// ============================================================================
-
-/**
- * Add a new rebalance task
- */
 export function addTask(input: RebalanceTaskInput): RebalanceTask {
-  // Validate wallet address
   if (!isValidWalletAddress(input.wallet)) {
     throw new Error(`Invalid wallet address: ${input.wallet}`);
   }
 
-  // Validate action if provided
   if (input.action && !isValidTaskAction(input.action)) {
     throw new Error(`Invalid action: ${input.action}. Must be one of: rebalance, flushToChecking, sweepDust`);
   }
@@ -158,58 +110,36 @@ export function addTask(input: RebalanceTaskInput): RebalanceTask {
   return task;
 }
 
-/**
- * Remove a task by ID
- */
 export function removeTask(taskId: string): boolean {
   const task = tasks.get(taskId);
-  if (!task) {
-    return false;
-  }
+  if (!task) return false;
 
   tasks.delete(taskId);
   log("remove", `Removed task ${taskId} for wallet ${task.wallet}`);
   return true;
 }
 
-/**
- * Get a task by ID
- */
 export function getTask(taskId: string): RebalanceTask | undefined {
   return tasks.get(taskId);
 }
 
-/**
- * List all tasks
- */
 export function listTasks(): RebalanceTask[] {
   return Array.from(tasks.values());
 }
 
-/**
- * Update a task's properties
- */
 export function updateTask(taskId: string, updates: Partial<RebalanceTask>): RebalanceTask | undefined {
   const task = tasks.get(taskId);
-  if (!task) {
-    return undefined;
-  }
+  if (!task) return undefined;
 
-  // Apply updates (excluding id and createdAt)
   const { id, createdAt, ...allowedUpdates } = updates as RebalanceTask;
   Object.assign(task, allowedUpdates);
 
   return task;
 }
 
-/**
- * Enable or disable a task
- */
 export function setTaskEnabled(taskId: string, enabled: boolean): RebalanceTask | undefined {
   const task = tasks.get(taskId);
-  if (!task) {
-    return undefined;
-  }
+  if (!task) return undefined;
 
   task.enabled = enabled;
   if (enabled && task.status === "error") {
@@ -221,20 +151,6 @@ export function setTaskEnabled(taskId: string, enabled: boolean): RebalanceTask 
   return task;
 }
 
-// ============================================================================
-// Task execution
-// ============================================================================
-
-/**
- * Execute a single task
- *
- * This function:
- * 1. Fetches the best strategy for the task's token/chain
- * 2. Logs what action would be taken
- * 3. Updates task status and timestamps
- *
- * TODO (B5): Actually compose and submit userOp via bundler
- */
 export async function executeTask(
   taskId: string,
   isManual: boolean = false
@@ -251,33 +167,29 @@ export async function executeTask(
     };
   }
 
-  // Mark task as running
   task.status = "running";
   const startTime = new Date();
 
   log(logSource, `Executing task ${taskId} for wallet ${task.wallet} (${task.token})`);
 
   try {
-    // Get the best strategy for this task
     let strategyId: string;
     let strategyScore: number | undefined;
     let dataSource: DataSource = "mock";
 
     if (task.preferredStrategyId) {
-      // Use preferred strategy if specified
       strategyId = task.preferredStrategyId;
       log(logSource, `  Using preferred strategy: ${strategyId}`);
     } else {
-      // Find best executable strategy (Morpho-only) based on risk tolerance
       const result = await getExecutableRecommendedStrategies(
         task.token,
         task.chainId,
         task.riskTolerance,
-        0 // No minimum APY filter
+        0
       );
 
       if (!result.bestStrategy) {
-        throw new Error(`No executable strategy found for ${task.token} on chain ${task.chainId} (Morpho-only)`);
+        throw new Error(`No executable strategy found for ${task.token} on chain ${task.chainId}`);
       }
 
       strategyId = result.bestStrategy.id;
@@ -289,38 +201,20 @@ export async function executeTask(
         ? `${adapterAddr.substring(0, 16)}...${adapterAddr.substring(adapterAddr.length - 4)}`
         : adapterAddr;
 
-      log(
-        logSource,
-        `  Data source: ${dataSource.toUpperCase()} (Morpho-only)${result.metadata.fetchedAt ? ` (fetched: ${result.metadata.fetchedAt})` : ""}`
-      );
-      log(
-        logSource,
-        `  Best strategy: ${strategyId} (score: ${strategyScore.toFixed(2)}, APY: ${(result.bestStrategy.apy * 100).toFixed(1)}%)`
-      );
-      log(
-        logSource,
-        `  Adapter: ${shortAdapter}`
-      );
+      log(logSource, `  Best strategy: ${strategyId} (APY: ${(result.bestStrategy.apy * 100).toFixed(1)}%)`);
+      log(logSource, `  Adapter: ${shortAdapter}`);
     }
 
     const actionMessage = getActionMessage(task.action, task.wallet, strategyId);
     log(logSource, `  ${actionMessage}`);
 
-    // Execute via bundler if configured, otherwise simulate
     let userOpHash: string | undefined;
     let adapterUsed: string | undefined;
 
     if (bundlerEnabled) {
-      // Get adapter address for migrateStrategy action
       let adapterAddress: Address | undefined;
       if (task.action === "rebalance" || task.action === "flushToChecking") {
-        // rebalance and flushToChecking use the best strategy's adapter
-        const result = await getExecutableRecommendedStrategies(
-          task.token,
-          task.chainId,
-          task.riskTolerance,
-          0
-        );
+        const result = await getExecutableRecommendedStrategies(task.token, task.chainId, task.riskTolerance, 0);
         if (result.bestStrategy?.adapterAddress) {
           adapterAddress = result.bestStrategy.adapterAddress as Address;
         }
@@ -330,25 +224,14 @@ export async function executeTask(
 
       switch (task.action) {
         case "rebalance":
-          userOpHash = await submitRebalanceUserOp(
-            task.wallet as Address,
-            USDC_ADDRESS
-          );
+          userOpHash = await submitRebalanceUserOp(task.wallet as Address, USDC_ADDRESS);
           break;
-
         case "flushToChecking":
-          // flushToChecking uses rebalance with different intent
-          // For now, treat as rebalance (module handles the logic)
-          userOpHash = await submitRebalanceUserOp(
-            task.wallet as Address,
-            USDC_ADDRESS
-          );
+          userOpHash = await submitRebalanceUserOp(task.wallet as Address, USDC_ADDRESS);
           break;
-
         case "sweepDust":
           userOpHash = await submitSweepDustUserOp(task.wallet as Address);
           break;
-
         default:
           throw new Error(`Unknown action: ${task.action}`);
       }
@@ -356,12 +239,10 @@ export async function executeTask(
       adapterUsed = adapterAddress;
       log(logSource, `  UserOp submitted: ${userOpHash}`);
     } else {
-      // Simulation mode - bundler not configured
-      log(logSource, `  [SIMULATION] Bundler not configured, skipping real submission`);
+      log(logSource, `  [SIMULATION] Bundler not configured`);
       userOpHash = `0xsimulated_${Date.now().toString(16)}`;
     }
 
-    // Update task status
     task.status = "completed";
     task.lastRunAt = startTime;
     task.nextRunAt = new Date(Date.now() + task.intervalMs);
@@ -381,14 +262,12 @@ export async function executeTask(
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
 
-    // Update task with error
     task.status = "error";
     task.lastRunAt = startTime;
     task.nextRunAt = new Date(Date.now() + task.intervalMs);
     task.errorCount++;
     task.lastError = errorMessage;
 
-    // Disable task if too many errors
     if (task.errorCount >= MAX_ERROR_COUNT) {
       task.enabled = false;
       log(logSource, `  Task ${taskId} disabled after ${MAX_ERROR_COUNT} consecutive errors`);
@@ -405,9 +284,6 @@ export async function executeTask(
   }
 }
 
-/**
- * Generate a human-readable action message
- */
 function getActionMessage(action: TaskAction, wallet: string, strategyId: string): string {
   const shortWallet = `${wallet.substring(0, 6)}...${wallet.substring(38)}`;
 
@@ -423,20 +299,10 @@ function getActionMessage(action: TaskAction, wallet: string, strategyId: string
   }
 }
 
-/**
- * Force-run a task immediately (manual trigger)
- */
 export async function runTaskNow(taskId: string): Promise<TaskExecutionResult> {
   return executeTask(taskId, true);
 }
 
-// ============================================================================
-// Scheduler loop
-// ============================================================================
-
-/**
- * Main scheduler tick - checks all tasks and runs those that are due
- */
 async function schedulerTick(): Promise<void> {
   const now = new Date();
   lastTickAt = now;
@@ -455,54 +321,100 @@ async function schedulerTick(): Promise<void> {
   }
 }
 
-/**
- * Start the scheduler
- */
-export function startScheduler(intervalMs?: number): void {
+async function checkRegistryWallets(): Promise<void> {
+  if (!chainReaderInitialized) return;
+
+  const now = new Date();
+  lastRegistryCheckAt = now;
+
+  const wallets = getRegisteredWallets();
+  if (wallets.length === 0) return;
+
+  log("registry", `Checking ${wallets.length} registered wallet(s) for rebalance`);
+
+  try {
+    const results = await checkWalletsForRebalance(wallets);
+    const needsRebalance = results.filter((r) => r.needsRebalance);
+
+    if (needsRebalance.length > 0) {
+      log("registry", `Found ${needsRebalance.length} wallet(s) needing rebalance:`);
+
+      for (const result of needsRebalance) {
+        const shortWallet = `${result.wallet.substring(0, 6)}...${result.wallet.substring(38)}`;
+        log(
+          "registry",
+          `  ${shortWallet}: balance=${formatUSDC(result.checkingBalance)} USDC, ` +
+          `threshold=${formatUSDC(result.threshold)} USDC, ` +
+          `surplus=${formatUSDC(result.surplus)} USDC`
+        );
+
+        if (bundlerEnabled) {
+          try {
+            log("registry", `  Submitting rebalance UserOp for ${shortWallet}...`);
+            const userOpHash = await submitRebalanceUserOp(result.wallet as Address, USDC_ADDRESS);
+            log("registry", `  UserOp submitted: ${userOpHash}`);
+          } catch (error) {
+            const errorMsg = error instanceof Error ? error.message : String(error);
+            log("registry", `  ERROR submitting UserOp: ${errorMsg}`);
+          }
+        } else {
+          log("registry", `  [SIMULATION] Would submit rebalance userOp for ${shortWallet}`);
+        }
+      }
+    } else {
+      log("registry", `All ${wallets.length} wallet(s) balanced (no action needed)`);
+    }
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    log("registry", `ERROR checking wallets: ${errorMessage}`);
+  }
+}
+
+export function startScheduler(options?: {
+  tickIntervalMs?: number;
+  registryCheckIntervalMs?: number;
+  rpcUrl?: string;
+}): void {
   if (isRunning) {
     log("start", "Scheduler already running");
     return;
   }
 
-  tickIntervalMs = intervalMs || DEFAULT_TICK_INTERVAL_MS;
+  tickIntervalMs = options?.tickIntervalMs || DEFAULT_TICK_INTERVAL_MS;
+  registryCheckIntervalMs = options?.registryCheckIntervalMs || DEFAULT_REGISTRY_CHECK_INTERVAL_MS;
   isRunning = true;
 
-  // Check bundler configuration
   bundlerEnabled = isBundlerConfigured();
 
   if (bundlerEnabled) {
     log("start", `Bundler ENABLED - will submit real UserOperations to CDP`);
-    log("start", `  CDP_BUNDLER_URL: configured`);
-    log("start", `  AUTOMATION_PRIVATE_KEY: configured`);
     log("start", `  AUTO_YIELD_MODULE_ADDRESS: ${process.env.AUTO_YIELD_MODULE_ADDRESS}`);
   } else {
     log("start", `WARNING: Bundler NOT configured - running in SIMULATION mode`);
-    if (!process.env.CDP_BUNDLER_URL) {
-      log("start", `  Missing: CDP_BUNDLER_URL`);
-    }
-    if (!process.env.AUTOMATION_PRIVATE_KEY) {
-      log("start", `  Missing: AUTOMATION_PRIVATE_KEY (run: npm run generate-session-key)`);
-    }
-    if (!process.env.AUTO_YIELD_MODULE_ADDRESS) {
-      log("start", `  Missing: AUTO_YIELD_MODULE_ADDRESS (get from Jackson)`);
-    }
-    log("start", `  Tasks will be logged but no UserOps will be submitted`);
+    if (!process.env.CDP_BUNDLER_URL) log("start", `  Missing: CDP_BUNDLER_URL`);
+    if (!process.env.AUTOMATION_PRIVATE_KEY) log("start", `  Missing: AUTOMATION_PRIVATE_KEY`);
+    if (!process.env.AUTO_YIELD_MODULE_ADDRESS) log("start", `  Missing: AUTO_YIELD_MODULE_ADDRESS`);
   }
 
-  log("start", `Scheduler started (tick interval: ${tickIntervalMs / 1000}s)`);
+  log("start", `Scheduler started (task tick: ${tickIntervalMs / 1000}s, registry check: ${registryCheckIntervalMs / 1000}s)`);
 
-  // Run first tick immediately
+  if (options?.rpcUrl) {
+    initChainReader({ rpcUrl: options.rpcUrl });
+    chainReaderInitialized = true;
+    log("start", "Chain reader initialized for registry wallet checks");
+  } else {
+    log("start", "No RPC URL provided - registry wallet checks disabled");
+  }
+
   schedulerTick();
+  schedulerInterval = setInterval(() => schedulerTick(), tickIntervalMs);
 
-  // Set up interval for subsequent ticks
-  schedulerInterval = setInterval(() => {
-    schedulerTick();
-  }, tickIntervalMs);
+  if (chainReaderInitialized) {
+    checkRegistryWallets();
+    registryCheckInterval = setInterval(() => checkRegistryWallets(), registryCheckIntervalMs);
+  }
 }
 
-/**
- * Stop the scheduler
- */
 export function stopScheduler(): void {
   if (!isRunning) {
     log("stop", "Scheduler not running");
@@ -514,14 +426,21 @@ export function stopScheduler(): void {
     schedulerInterval = null;
   }
 
+  if (registryCheckInterval) {
+    clearInterval(registryCheckInterval);
+    registryCheckInterval = null;
+  }
+
   isRunning = false;
+  chainReaderInitialized = false;
   log("stop", "Scheduler stopped");
 }
 
-/**
- * Get scheduler status
- */
-export function getSchedulerStatus(): SchedulerStatus {
+export function getSchedulerStatus(): SchedulerStatus & {
+  registryCheckIntervalMs: number;
+  lastRegistryCheckAt?: Date;
+  chainReaderInitialized: boolean;
+} {
   return {
     isRunning,
     bundlerEnabled,
@@ -529,19 +448,8 @@ export function getSchedulerStatus(): SchedulerStatus {
     taskCount: tasks.size,
     lastTickAt,
     nextTickAt: lastTickAt ? new Date(lastTickAt.getTime() + tickIntervalMs) : undefined,
+    registryCheckIntervalMs,
+    lastRegistryCheckAt,
+    chainReaderInitialized,
   };
 }
-
-// ============================================================================
-// Future improvements
-// ============================================================================
-
-// TODO: Persist tasks to database
-// async function persistTasks(): Promise<void> {
-//   // Save tasks to database or file
-// }
-
-// TODO: Load tasks from database on startup
-// async function loadTasks(): Promise<void> {
-//   // Load tasks from database or file
-// }

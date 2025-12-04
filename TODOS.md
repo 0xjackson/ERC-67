@@ -9,7 +9,7 @@ Last Updated: December 4, 2024
 | Area | Status |
 |------|--------|
 | **Contracts** | v2 Deployed on Base Mainnet |
-| **Backend** | B1-B4 Complete, B5-B6 In Progress |
+| **Backend** | B1-B6 Complete, Railway env vars configured |
 | **Frontend** | UI Built, Needs Contract Wiring |
 
 ---
@@ -28,48 +28,7 @@ Last Updated: December 4, 2024
 
 ## Outstanding Tasks
 
-### 1. Frontend: Update Contract Addresses
-**Priority:** High (Quick Win)
-**Status:** TODO
-**File:** `frontend/lib/constants.ts`
-
-Update to v2 deployment addresses:
-```typescript
-export const CONTRACTS = {
-  FACTORY: "0xcf10279BAA0d5407Dbb637517d23055A55E72923",
-  MODULE: "0x71b5A4663A49FF02BE672Ea9560256D2268727B7",
-  VALIDATOR: "0xe29ed376a2780f653C14EEC203eD25094c0E772A",
-  ADAPTER: "0x42EFecD83447e5b90c5F706309FaC8f9615bd68F",
-  USDC: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
-} as const;
-```
-
----
-
-### 2. Backend: Real UserOp Submission (B5)
-**Priority:** High
-**Status:** In Progress (branch work)
-**File:** `backend/src/scheduler.ts` (line ~290)
-
-**Current State:**
-- Scheduler logs `[SIMULATED]` instead of submitting real userOps
-- Branch exists with Permissionless.js + CDP Kit setup
-
-**Implementation:**
-1. Create `bundler.ts` with userOp building logic
-2. Use Permissionless.js for userOp construction
-3. Use CDP Bundler/Paymaster for submission
-4. Replace simulation in `executeTask()` with real calls
-
-**Required Env Vars:**
-```env
-CDP_API_KEY=your_cdp_api_key
-AUTOMATION_PRIVATE_KEY=0x...
-```
-
----
-
-### 3. Frontend: Wire Dashboard to Real Balances
+### 1. Frontend: Wire Dashboard to Real Balances
 **Priority:** High
 **Status:** TODO
 **Files:** `frontend/app/dashboard/page.tsx`, `frontend/lib/services/`
@@ -105,7 +64,7 @@ const yieldBalance = await publicClient.readContract({
 
 ---
 
-### 4. Frontend: Wire Send Page to Contract
+### 2. Frontend: Wire Send Page to Contract
 **Priority:** High
 **Status:** TODO
 **File:** `frontend/app/send/page.tsx`
@@ -120,7 +79,7 @@ const yieldBalance = await publicClient.readContract({
 
 ---
 
-### 5. Frontend: Wire Settings Page to Contract
+### 3. Frontend: Wire Settings Page to Contract
 **Priority:** Medium
 **Status:** TODO
 **File:** `frontend/app/settings/page.tsx`
@@ -135,23 +94,7 @@ const yieldBalance = await publicClient.readContract({
 
 ---
 
-### 6. Backend: Connect Cron to Wallet Registry
-**Priority:** Medium
-**Status:** TODO
-**Files:** `backend/src/scheduler.ts`, `backend/src/server.ts`
-
-**Current State:**
-- Railway backend deployed with wallet registry
-- Scheduler runs but doesn't iterate registered wallets
-
-**Implementation:**
-1. Query registered wallets from registry endpoint
-2. For each wallet, check if rebalance needed
-3. Submit rebalance userOp if threshold exceeded
-
----
-
-### 7. Backend: Real Dust Balance Reading
+### 4. Backend: Real Dust Balance Reading
 **Priority:** Low
 **Status:** TODO
 **File:** `backend/src/dustService.ts`
@@ -165,7 +108,7 @@ const yieldBalance = await publicClient.readContract({
 
 ---
 
-### 8. E2E Flow Test
+### 5. E2E Flow Test
 **Priority:** Medium (After wiring complete)
 **Status:** TODO
 
@@ -186,18 +129,20 @@ const yieldBalance = await publicClient.readContract({
 - [x] Backend recommendation engine (B2)
 - [x] Backend scheduler framework (B3)
 - [x] Backend dust token service (B4)
+- [x] Backend real UserOp submission via CDP bundler (B5)
+- [x] Backend connect cron to wallet registry with on-chain balance checks (B6)
 - [x] Railway backend deployment
+- [x] Railway env vars configured (CDP_BUNDLER_URL, AUTOMATION_PRIVATE_KEY, AUTO_YIELD_MODULE_ADDRESS, BASE_RPC_URL)
 - [x] Wallet registry setup
 - [x] Frontend UI (landing, dashboard, send, settings pages)
+- [x] Frontend: Update contract addresses to v2
 
 ---
 
 ## Critical Path
 
 ```
-[1] Update addresses ──→ [3] Dashboard balances ──→ [4] Send wiring ──→ [8] E2E test
-                                    ↑
-[2] B5 UserOp submission ──→ [6] Cron + registry ─┘
+[1] Dashboard balances ──→ [2] Send wiring ──→ [5] E2E test
 ```
 
-Tasks 1 and 2 are the immediate blockers. Task 1 is a 2-minute fix.
+Backend is complete. Frontend wiring is the remaining blocker.
