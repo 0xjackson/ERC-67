@@ -13,7 +13,7 @@ const config = createConfig({
   connectors: [
     coinbaseWallet({
       appName: "Autopilot Wallet",
-      preference: "smartWalletOnly", // Enable Smart Wallet
+      preference: "eoaOnly",
     }),
   ],
   ssr: true,
