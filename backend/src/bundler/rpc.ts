@@ -107,11 +107,18 @@ export async function getNonceForEcdsa(walletAddress: Address): Promise<bigint> 
   });
 }
 
-export interface PaymasterDataResult {
+// pm_getPaymasterStubData returns gas limits (for unsigned userOps)
+export interface PaymasterStubDataResult {
   paymaster: Address;
   paymasterData: Hex;
   paymasterVerificationGasLimit: Hex;
   paymasterPostOpGasLimit: Hex;
+}
+
+// pm_getPaymasterData only returns paymaster + data (NO gas limits!)
+export interface PaymasterDataResult {
+  paymaster: Address;
+  paymasterData: Hex;
 }
 
 // Get paymaster data without requiring signature
@@ -135,6 +142,37 @@ export async function getPaymasterData(
 ): Promise<PaymasterDataResult> {
   return pimlicoRpc<PaymasterDataResult>(
     "pm_getPaymasterData",
+    [
+      userOp,
+      CONTRACTS.ENTRYPOINT,
+      toHex(CHAIN_ID),
+      null, // context - null for sponsorship
+    ]
+  );
+}
+
+// Get paymaster STUB data - returns gas limits for unsigned userOps
+// Use this first to get paymasterVerificationGasLimit and paymasterPostOpGasLimit
+export async function getPaymasterStubData(
+  userOp: {
+    sender: Address;
+    nonce: Hex;
+    factory: Address | null;
+    factoryData: Hex | null;
+    callData: Hex;
+    callGasLimit: Hex;
+    verificationGasLimit: Hex;
+    preVerificationGas: Hex;
+    maxFeePerGas: Hex;
+    maxPriorityFeePerGas: Hex;
+    paymaster: Address | null;
+    paymasterVerificationGasLimit: Hex | null;
+    paymasterPostOpGasLimit: Hex | null;
+    paymasterData: Hex | null;
+  }
+): Promise<PaymasterStubDataResult> {
+  return pimlicoRpc<PaymasterStubDataResult>(
+    "pm_getPaymasterStubData",
     [
       userOp,
       CONTRACTS.ENTRYPOINT,

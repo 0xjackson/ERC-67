@@ -14,6 +14,7 @@ import {
   getNonce,
   getNonceForEcdsa,
   getGasPrices,
+  getPaymasterStubData,
   getPaymasterData,
   sponsorUserOperation,
   sendUserOperation,
@@ -220,8 +221,8 @@ export async function prepareUserSendOp(
 
   console.log(`[bundler] Nonce: ${nonce}, Gas prices: ${maxFeePerGas}/${maxPriorityFeePerGas}`);
 
-  // 5. Build unsigned UserOp with hardcoded gas limits
-  const unsignedUserOp = {
+  // 5. Build initial unsigned UserOp with hardcoded gas limits (no paymaster yet)
+  const initialUserOp = {
     sender: walletAddress,
     nonce: toHex(nonce),
     factory: null,
@@ -238,12 +239,38 @@ export async function prepareUserSendOp(
     paymasterData: null,
   };
 
-  // 6. Get paymaster data (no signature required!)
-  console.log(`[bundler] Getting paymaster data...`);
-  const paymasterResult = await getPaymasterData(unsignedUserOp);
-  console.log(`[bundler] Paymaster: ${paymasterResult.paymaster}`);
+  // 6. STEP 1: Get paymaster STUB data (returns gas limits, no signature required!)
+  // This is critical - pm_getPaymasterStubData returns paymasterVerificationGasLimit
+  // and paymasterPostOpGasLimit, while pm_getPaymasterData does NOT.
+  console.log(`[bundler] Getting paymaster stub data for gas limits...`);
+  const stubResult = await getPaymasterStubData(initialUserOp);
+  console.log(`[bundler] Paymaster: ${stubResult.paymaster}, verification gas: ${stubResult.paymasterVerificationGasLimit}, postOp gas: ${stubResult.paymasterPostOpGasLimit}`);
 
-  // 7. Build final UserOp with paymaster fields (use gas limits from paymaster response!)
+  // 7. Build userOp WITH paymaster gas limits from stub data
+  const userOpWithPaymasterGas = {
+    sender: walletAddress,
+    nonce: toHex(nonce),
+    factory: null,
+    factoryData: null,
+    callData,
+    callGasLimit: toHex(USER_SEND_GAS_LIMITS.callGasLimit),
+    verificationGasLimit: toHex(USER_SEND_GAS_LIMITS.verificationGasLimit),
+    preVerificationGas: toHex(USER_SEND_GAS_LIMITS.preVerificationGas),
+    maxFeePerGas: toHex(maxFeePerGas),
+    maxPriorityFeePerGas: toHex(maxPriorityFeePerGas),
+    paymaster: stubResult.paymaster,
+    paymasterVerificationGasLimit: stubResult.paymasterVerificationGasLimit,
+    paymasterPostOpGasLimit: stubResult.paymasterPostOpGasLimit,
+    paymasterData: stubResult.paymasterData, // stub data for now
+  };
+
+  // 8. STEP 2: Get actual paymaster signature (pm_getPaymasterData)
+  // This returns the real paymasterData with Pimlico's signature
+  console.log(`[bundler] Getting final paymaster signature...`);
+  const paymasterResult = await getPaymasterData(userOpWithPaymasterGas);
+  console.log(`[bundler] Final paymaster data received`);
+
+  // 9. Build final UserOp with paymaster signature
   const userOp: UserOperationV07 = {
     sender: walletAddress,
     nonce: toHex(nonce),
@@ -256,13 +283,15 @@ export async function prepareUserSendOp(
     maxFeePerGas: toHex(maxFeePerGas),
     maxPriorityFeePerGas: toHex(maxPriorityFeePerGas),
     paymaster: paymasterResult.paymaster,
-    paymasterVerificationGasLimit: paymasterResult.paymasterVerificationGasLimit,
-    paymasterPostOpGasLimit: paymasterResult.paymasterPostOpGasLimit,
+    // Use gas limits from STUB data (pm_getPaymasterData doesn't return these!)
+    paymasterVerificationGasLimit: stubResult.paymasterVerificationGasLimit,
+    paymasterPostOpGasLimit: stubResult.paymasterPostOpGasLimit,
+    // Use paymasterData from pm_getPaymasterData (contains the actual signature)
     paymasterData: paymasterResult.paymasterData,
     signature: "0x", // Placeholder - user will sign
   };
 
-  // 8. Compute hash for user to sign (must match the userOp exactly!)
+  // 10. Compute hash for user to sign (must match the userOp exactly!)
   const userOpHash = getUserOpHashV07({
     sender: walletAddress,
     nonce,
@@ -275,8 +304,8 @@ export async function prepareUserSendOp(
     maxFeePerGas,
     maxPriorityFeePerGas,
     paymaster: paymasterResult.paymaster,
-    paymasterVerificationGasLimit: BigInt(paymasterResult.paymasterVerificationGasLimit),
-    paymasterPostOpGasLimit: BigInt(paymasterResult.paymasterPostOpGasLimit),
+    paymasterVerificationGasLimit: BigInt(stubResult.paymasterVerificationGasLimit),
+    paymasterPostOpGasLimit: BigInt(stubResult.paymasterPostOpGasLimit),
     paymasterData: paymasterResult.paymasterData,
   });
 
