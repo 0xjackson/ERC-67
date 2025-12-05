@@ -62,7 +62,7 @@ import {
   isValidWalletAddress,
   isValidTaskAction,
 } from "./scheduler";
-import { prepareUserSendOp, submitSignedUserOp } from "./bundler/submit";
+import { prepareUserSendOp, prepareUserSweepOp, submitSignedUserOp } from "./bundler/submit";
 import { CONTRACTS } from "./bundler/constants";
 import type { Address } from "viem";
 
@@ -1145,16 +1145,14 @@ app.get("/dust/config", (req: Request, res: Response) => {
 
 /**
  * GET /dust/summary
- * Returns dust summary for a wallet (STUB - returns mock data)
+ * Returns dust summary for a wallet with real on-chain balances
  *
  * Query params:
  *   - wallet: string (required, 0x address)
  *   - chainId: number (optional, default 8453)
  *   - consolidation: string (optional, token symbol, default "USDC")
- *
- * TODO: Implement real on-chain balance reading in B5+
  */
-app.get("/dust/summary", (req: Request, res: Response) => {
+app.get("/dust/summary", async (req: Request, res: Response) => {
   const wallet = req.query.wallet as string | undefined;
   const chainId = parseChainId(req.query.chainId);
   const consolidation = req.query.consolidation as string | undefined;
@@ -1189,9 +1187,16 @@ app.get("/dust/summary", (req: Request, res: Response) => {
     return res.status(400).json(errorResponse);
   }
 
-  const summary = getDustSummary(wallet, chainId, consolidation?.toUpperCase());
-
-  return res.json(summary);
+  try {
+    const summary = await getDustSummary(wallet, chainId, consolidation?.toUpperCase());
+    return res.json(summary);
+  } catch (error) {
+    console.error("[/dust/summary] Error:", error);
+    const errorResponse: ErrorResponse = {
+      error: "Failed to fetch dust summary",
+    };
+    return res.status(500).json(errorResponse);
+  }
 });
 
 // ============================================================================
@@ -1346,6 +1351,125 @@ app.post("/ops/submit-signed", async (req: Request, res: Response) => {
     return res.json(result);
   } catch (error: unknown) {
     console.error("[/ops/submit-signed] Error:", error);
+    const message = error instanceof Error ? error.message : "Unknown error";
+    const errorResponse: ErrorResponse = { error: message };
+    return res.status(500).json(errorResponse);
+  }
+});
+
+// ============================================================================
+// Dust Sweep Operations
+// ============================================================================
+
+/**
+ * POST /ops/prepare-sweep
+ * Prepare a sweep UserOp for user signing (returns unsigned UserOp + hash to sign)
+ * This uses the ECDSA validator (user's wallet) instead of automation key.
+ *
+ * Body:
+ *   - walletAddress: string (required, smart wallet address)
+ *   - dustTokens: string[] (required, array of token addresses to sweep)
+ *   - router?: string (optional, DEX router address, defaults to Aerodrome)
+ *   - consolidationToken?: string (optional, defaults to USDC)
+ */
+app.post("/ops/prepare-sweep", async (req: Request, res: Response) => {
+  try {
+    const { walletAddress, dustTokens, router, consolidationToken } = req.body;
+
+    if (!walletAddress || !dustTokens || !Array.isArray(dustTokens)) {
+      const errorResponse: ErrorResponse = {
+        error: "Missing required fields: walletAddress, dustTokens (array)",
+      };
+      return res.status(400).json(errorResponse);
+    }
+
+    if (dustTokens.length === 0) {
+      const errorResponse: ErrorResponse = {
+        error: "dustTokens array cannot be empty",
+      };
+      return res.status(400).json(errorResponse);
+    }
+
+    // Validate wallet address format
+    if (!isValidWalletAddress(walletAddress)) {
+      const errorResponse: ErrorResponse = {
+        error: "Invalid wallet address format",
+      };
+      return res.status(400).json(errorResponse);
+    }
+
+    const result = await prepareUserSweepOp(
+      walletAddress as Address,
+      dustTokens as Address[],
+      (router as Address) || CONTRACTS.AERODROME_ROUTER,
+      (consolidationToken as Address) || CONTRACTS.USDC
+    );
+
+    return res.json(result);
+  } catch (error: unknown) {
+    console.error("[/ops/prepare-sweep] Error:", error);
+    const message = error instanceof Error ? error.message : "Unknown error";
+    const errorResponse: ErrorResponse = { error: message };
+    return res.status(500).json(errorResponse);
+  }
+});
+
+/**
+ * POST /ops/dust
+ * Sweep dust tokens to USDC and deposit to yield (automation key signed)
+ * NOTE: This endpoint uses automation key. For user-signed sweeps, use
+ * /ops/prepare-sweep + /ops/submit-signed instead.
+ *
+ * Body:
+ *   - wallet: string (required, smart wallet address)
+ *   - dustTokens: string[] (required, array of token addresses to sweep)
+ *   - router?: string (optional, DEX router address, defaults to Aerodrome)
+ *   - consolidationToken?: string (optional, defaults to USDC)
+ */
+app.post("/ops/dust", async (req: Request, res: Response) => {
+  try {
+    const { wallet, dustTokens, router, consolidationToken } = req.body;
+
+    if (!wallet || !dustTokens || !Array.isArray(dustTokens)) {
+      const errorResponse: ErrorResponse = {
+        error: "Missing required fields: wallet, dustTokens (array)",
+      };
+      return res.status(400).json(errorResponse);
+    }
+
+    if (dustTokens.length === 0) {
+      const errorResponse: ErrorResponse = {
+        error: "dustTokens array cannot be empty",
+      };
+      return res.status(400).json(errorResponse);
+    }
+
+    // Validate wallet address format
+    if (!isValidWalletAddress(wallet)) {
+      const errorResponse: ErrorResponse = {
+        error: "Invalid wallet address format",
+      };
+      return res.status(400).json(errorResponse);
+    }
+
+    // Import submitSweepDustUserOp dynamically to avoid circular deps
+    const { submitSweepDustUserOp } = await import("./bundler/submit");
+
+    const userOpHash = await submitSweepDustUserOp(
+      wallet as Address,
+      dustTokens as Address[],
+      router as Address | undefined,
+      consolidationToken as Address | undefined
+    );
+
+    return res.json({
+      success: true,
+      userOpHash,
+      tokensSwept: dustTokens.length,
+      message: `Swept ${dustTokens.length} dust tokens`,
+    });
+  } catch (error: unknown) {
+    console.error("[/ops/dust] Error:", error);
     const message = error instanceof Error ? error.message : "Unknown error";
     const errorResponse: ErrorResponse = { error: message };
     return res.status(500).json(errorResponse);

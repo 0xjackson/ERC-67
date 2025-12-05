@@ -1,11 +1,12 @@
 "use client";
 
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { useAccount, useReadContract, useSignMessage } from "wagmi";
 import { CONTRACTS, FACTORY_ABI, MODULE_ABI } from "@/lib/constants";
 import { getSavedWallet, clearSavedWallet } from "@/lib/services/wallet";
 import { prepareSend, submitSigned, autopilotApi, type CurrentStrategyInfo } from "@/lib/api/client";
+import { DustBalances } from "@/components/DustBalances";
 
 type SendStatus = "idle" | "loading" | "success" | "error";
 
@@ -33,6 +34,9 @@ export default function DashboardPage() {
   // Strategy info state
   const [currentStrategy, setCurrentStrategy] = useState<CurrentStrategyInfo | null>(null);
   const [isLoadingStrategy, setIsLoadingStrategy] = useState(false);
+
+  // Dust refresh key - increment to force DustBalances to refetch
+  const [dustRefreshKey, setDustRefreshKey] = useState(0);
 
   // Get saved wallet from localStorage
   const savedWallet = typeof window !== "undefined" ? getSavedWallet() : null;
@@ -290,6 +294,21 @@ export default function DashboardPage() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* Dust Balances Section */}
+      {smartWalletAddress && (
+        <DustBalances
+          key={dustRefreshKey}
+          walletAddress={smartWalletAddress}
+          onSweepComplete={() => {
+            setDustRefreshKey((k) => k + 1);
+            setToast({
+              message: "Dust tokens swept to USDC and deposited to yield!",
+              type: "success",
+            });
+          }}
+        />
       )}
 
       {/* Send Section */}

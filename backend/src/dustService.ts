@@ -3,7 +3,7 @@
  *
  * Service layer for managing dust token metadata and configuration.
  * Provides functions to query dust tokens, get consolidation config,
- * and (in future) read wallet balances.
+ * and read wallet balances via multicall.
  */
 
 import {
@@ -18,6 +18,8 @@ import {
   DEFAULT_CONSOLIDATION_ADDRESS,
 } from "./dustConfig";
 import { CHAIN_IDS } from "./strategies";
+import { createPublicClient, http, erc20Abi, formatUnits, type Address } from "viem";
+import { base } from "viem/chains";
 
 // ============================================================================
 // Constants
@@ -25,6 +27,28 @@ import { CHAIN_IDS } from "./strategies";
 
 /** Default chain ID for dust operations */
 export const DEFAULT_DUST_CHAIN_ID = CHAIN_IDS.BASE_MAINNET;
+
+/** CoinGecko API base URL (free tier, no API key required) */
+const COINGECKO_API_URL = "https://api.coingecko.com/api/v3";
+
+/** Map token addresses to CoinGecko IDs (Base mainnet) */
+const TOKEN_TO_COINGECKO_ID: Record<string, string> = {
+  "0x4ed4e862860bed51a9570b96d89af5e1b0efefed": "degen-base", // DEGEN
+  "0x940181a94a35a4569e4529a3cdfb74e38fd98631": "aerodrome-finance", // AERO
+  "0x0578d8a44db98b23bf096a382e016e29a5ce0ffe": "higher", // HIGHER
+  "0xac1bd2486aaf3b5c0fc3fd868558b082a531b2b4": "toshi", // TOSHI
+  "0x532f27101965dd16442e59d40670faf5ebb142e4": "brett", // BRETT
+  "0xd9aaec86b65d86f6a7b5b1b0c42ffa531710b6ca": "bridged-usd-coin-base", // USDbC
+};
+
+/** Price cache to avoid hitting rate limits */
+interface PriceCache {
+  prices: Record<string, number>;
+  timestamp: number;
+}
+
+let priceCache: PriceCache | null = null;
+const CACHE_TTL_MS = 60_000; // 1 minute cache
 
 // ============================================================================
 // Query Functions
@@ -170,47 +194,196 @@ export function getDustConfigByAddress(
 }
 
 // ============================================================================
-// Wallet Summary (Stub for future implementation)
+// Viem Client
+// ============================================================================
+
+const publicClient = createPublicClient({
+  chain: base,
+  transport: http(process.env.BASE_RPC_URL || "https://mainnet.base.org"),
+});
+
+// ============================================================================
+// Price Fetching (CoinGecko)
 // ============================================================================
 
 /**
- * Get dust summary for a wallet (STUB - returns mock data)
+ * Fetch USD prices for dust tokens from CoinGecko
+ * Uses caching to avoid rate limits (free tier: 10-30 calls/min)
  *
- * TODO (B5+): Implement actual on-chain balance reading via:
- * - Multicall contract to batch balance queries
- * - Alchemy/Infura enhanced APIs
- * - The Graph subgraphs
+ * @returns Map of token address (lowercase) to USD price
+ */
+async function fetchTokenPrices(): Promise<Record<string, number>> {
+  // Check cache
+  if (priceCache && Date.now() - priceCache.timestamp < CACHE_TTL_MS) {
+    console.log("[dustService] Using cached prices");
+    return priceCache.prices;
+  }
+
+  const coinGeckoIds = Object.values(TOKEN_TO_COINGECKO_ID);
+  if (coinGeckoIds.length === 0) return {};
+
+  try {
+    const idsParam = coinGeckoIds.join(",");
+    const url = `${COINGECKO_API_URL}/simple/price?ids=${idsParam}&vs_currencies=usd`;
+
+    console.log("[dustService] Fetching prices from CoinGecko...");
+    const response = await fetch(url, {
+      headers: {
+        "Accept": "application/json",
+      },
+    });
+
+    if (!response.ok) {
+      console.error(`[dustService] CoinGecko API error: ${response.status}`);
+      return priceCache?.prices || {};
+    }
+
+    const data = await response.json() as Record<string, { usd?: number }>;
+
+    // Map CoinGecko IDs back to token addresses
+    const prices: Record<string, number> = {};
+    for (const [address, geckoId] of Object.entries(TOKEN_TO_COINGECKO_ID)) {
+      const priceData = data[geckoId];
+      if (priceData?.usd !== undefined) {
+        prices[address.toLowerCase()] = priceData.usd;
+      }
+    }
+
+    // Update cache
+    priceCache = {
+      prices,
+      timestamp: Date.now(),
+    };
+
+    console.log("[dustService] Fetched prices:", prices);
+    return prices;
+  } catch (error) {
+    console.error("[dustService] Failed to fetch prices:", error);
+    // Return cached prices if available, otherwise empty
+    return priceCache?.prices || {};
+  }
+}
+
+/**
+ * Get USD price for a specific token
+ *
+ * @param tokenAddress - Token contract address
+ * @param prices - Price map from fetchTokenPrices
+ * @returns USD price or undefined if not available
+ */
+function getTokenPrice(
+  tokenAddress: string,
+  prices: Record<string, number>
+): number | undefined {
+  return prices[tokenAddress.toLowerCase()];
+}
+
+// ============================================================================
+// Wallet Balance Fetching
+// ============================================================================
+
+/**
+ * Fetch real token balances for a wallet using multicall
+ *
+ * @param wallet - Wallet address
+ * @param tokens - Array of token metadata to check
+ * @returns Array of balances (in wei as string)
+ */
+async function fetchTokenBalances(
+  wallet: string,
+  tokens: DustTokenMeta[]
+): Promise<bigint[]> {
+  if (tokens.length === 0) return [];
+
+  const results = await publicClient.multicall({
+    contracts: tokens.map((token) => ({
+      address: token.tokenAddress as Address,
+      abi: erc20Abi,
+      functionName: "balanceOf",
+      args: [wallet as Address],
+    })),
+    allowFailure: true,
+  });
+
+  return results.map((result) => {
+    if (result.status === "success") {
+      return result.result as bigint;
+    }
+    return 0n;
+  });
+}
+
+/**
+ * Get dust summary for a wallet with real on-chain balances and USD values
  *
  * @param wallet - Wallet address
  * @param chainId - Chain ID
  * @param consolidationSymbol - Consolidation token symbol
- * @returns Mock dust summary
+ * @returns Dust summary with real balances and USD values
  */
-export function getDustSummary(
+export async function getDustSummary(
   wallet: string,
   chainId: number,
   consolidationSymbol?: string
-): DustSummaryResponse {
-  const config = getDustConfig(chainId, consolidationSymbol);
+): Promise<DustSummaryResponse> {
   const consolidationToken = consolidationSymbol || DEFAULT_CONSOLIDATION_TOKEN[chainId] || "USDC";
+  const dustSources = getDustSources(chainId);
 
-  // Mock balances for demo purposes
-  const mockBalances: DustBalance[] = getDustSources(chainId)
-    .slice(0, 3) // Just show first 3 for demo
-    .map((token) => ({
-      token,
-      balance: "1000000000000000000", // 1 token in wei (mock)
-      balanceUsd: Math.random() * 10, // Random USD value for demo
-      isDust: true,
-    }));
+  // Fetch real balances and prices in parallel
+  let dustBalances: DustBalance[] = [];
+  let totalDustValueUsd = 0;
+
+  try {
+    const [balances, prices] = await Promise.all([
+      fetchTokenBalances(wallet, dustSources),
+      fetchTokenPrices(),
+    ]);
+
+    dustBalances = dustSources.map((token, index) => {
+      const rawBalance = balances[index];
+      const formattedBalance = formatUnits(rawBalance, token.decimals);
+      const numericBalance = parseFloat(formattedBalance);
+
+      // Get USD price for this token
+      const price = getTokenPrice(token.tokenAddress, prices);
+      const balanceUsd = price !== undefined ? numericBalance * price : undefined;
+
+      // Determine if this is "dust" based on USD value or token threshold
+      // Consider dust if value < $5 or below token-specific threshold
+      const isDust = numericBalance > 0 && (
+        (balanceUsd !== undefined && balanceUsd < 5) ||
+        (balanceUsd === undefined && numericBalance < (token.dustThreshold || 1000))
+      );
+
+      return {
+        token,
+        balance: rawBalance.toString(),
+        balanceFormatted: formattedBalance,
+        balanceUsd,
+        isDust,
+      };
+    }).filter((b) => BigInt(b.balance) > 0n); // Only include non-zero balances
+
+    // Calculate total USD value of dust tokens
+    totalDustValueUsd = dustBalances
+      .filter((b) => b.isDust && b.token.suggestedAction === "swap")
+      .reduce((sum, b) => sum + (b.balanceUsd || 0), 0);
+
+  } catch (error) {
+    console.error("[dustService] Failed to fetch balances:", error);
+    // Return empty balances on error
+    dustBalances = [];
+  }
 
   return {
     wallet,
     chainId,
     consolidationToken,
-    dustBalances: mockBalances,
-    totalDustValueUsd: mockBalances.reduce((sum, b) => sum + (b.balanceUsd || 0), 0),
-    note: "TODO: This is mock data. Real implementation will read on-chain balances via multicall or indexed data.",
+    dustBalances,
+    totalDustValueUsd: totalDustValueUsd > 0 ? totalDustValueUsd : undefined,
+    sweepableTokens: dustBalances
+      .filter((b) => b.isDust && b.token.suggestedAction === "swap")
+      .map((b) => b.token.tokenAddress),
   };
 }
 
@@ -258,35 +431,9 @@ export function getSupportedDustChainIds(): number[] {
 }
 
 // ============================================================================
-// TODO: Future implementations
+// Future Enhancements
 // ============================================================================
 
-// TODO: Fetch real token balances from chain
-// export async function fetchWalletDustBalances(
-//   wallet: string,
-//   chainId: number
-// ): Promise<DustBalance[]> {
-//   // Use multicall to batch ERC20.balanceOf calls
-//   // Or use Alchemy's getTokenBalances API
-//   throw new Error("Not implemented");
-// }
-
-// TODO: Estimate swap value for dust tokens
-// export async function estimateDustSwapValue(
-//   dustBalances: DustBalance[],
-//   consolidationToken: string
-// ): Promise<number> {
-//   // Query DEX routers for swap quotes
-//   // Or use price oracles
-//   throw new Error("Not implemented");
-// }
-
-// TODO: Auto-discover new dust tokens in wallet
-// export async function discoverDustTokens(
-//   wallet: string,
-//   chainId: number
-// ): Promise<DustTokenMeta[]> {
-//   // Use token transfer events or balance indexers
-//   // to find tokens not in our registry
-//   throw new Error("Not implemented");
-// }
+// Future: Estimate swap value for dust tokens using DEX quotes
+// Future: Auto-discover new dust tokens via transfer events or indexers
+// Future: Integrate price oracles for USD valuations

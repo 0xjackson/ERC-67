@@ -332,17 +332,18 @@ export type DustConfigResponse = {
 };
 
 /**
- * Mock balance for dust summary (future: real on-chain data)
+ * Balance info for a dust token
  */
 export type DustBalance = {
   token: DustTokenMeta;
-  balance: string;
-  balanceUsd?: number;
-  isDust: boolean;
+  balance: string;           // Raw balance in wei
+  balanceFormatted?: string; // Human-readable balance
+  balanceUsd?: number;       // USD value (requires price oracle)
+  isDust: boolean;           // Whether this qualifies as "dust"
 };
 
 /**
- * Response for GET /dust/summary endpoint (stub for now)
+ * Response for GET /dust/summary endpoint
  */
 export type DustSummaryResponse = {
   wallet: string;
@@ -350,7 +351,8 @@ export type DustSummaryResponse = {
   consolidationToken: string;
   dustBalances: DustBalance[];
   totalDustValueUsd?: number;
-  note: string;
+  sweepableTokens?: string[];  // Token addresses that can be swept
+  note?: string;
 };
 
 // ============================================================================

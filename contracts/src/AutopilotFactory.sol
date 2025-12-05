@@ -33,9 +33,10 @@ contract AutopilotFactory {
 
     bytes4 private constant SELECTOR_REBALANCE = 0x21c28191;
     bytes4 private constant SELECTOR_MIGRATE = 0x6cb56d19;
+    bytes4 private constant SELECTOR_SWEEP = 0x8fd059b6;
     bytes4 private constant SELECTOR_EXECUTE = 0xe9ae5c53;
 
-    uint256 public constant DEFAULT_THRESHOLD = 1e6;
+    uint256 public constant DEFAULT_THRESHOLD = 0;
 
     IKernelFactory public immutable kernelFactory;
     address public immutable ecdsaValidator;
@@ -189,9 +190,10 @@ contract AutopilotFactory {
             abi.encode(executorOnInstallData, bytes(""))
         );
 
-        bytes4[] memory allowedSelectors = new bytes4[](2);
+        bytes4[] memory allowedSelectors = new bytes4[](3);
         allowedSelectors[0] = SELECTOR_REBALANCE;
         allowedSelectors[1] = SELECTOR_MIGRATE;
+        allowedSelectors[2] = SELECTOR_SWEEP;
 
         bytes memory validatorOnInstallData = abi.encode(automationKey, autoYieldModule, allowedSelectors);
 
