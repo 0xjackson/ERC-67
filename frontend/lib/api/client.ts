@@ -112,6 +112,31 @@ export type StrategiesResponse = {
   strategies: Strategy[];
 };
 
+export type CurrentStrategyInfo = {
+  id: string;
+  protocol: string;
+  name: string;
+  apy: number;
+  vaultAddress: string;
+  adapterAddress?: string;
+};
+
+export type StrategyMetadata = {
+  dataSource: "live" | "mock";
+  fetchedAt?: string;
+  expiresAt?: string;
+};
+
+export type WalletSummaryResponse = {
+  wallet: string;
+  owner?: string;
+  chainId: number;
+  isRegistered: boolean;
+  currentStrategy?: CurrentStrategyInfo;
+  fetchedAt: string;
+  metadata: StrategyMetadata;
+};
+
 export type ErrorResponse = {
   error: string;
 };
@@ -171,7 +196,7 @@ function unwrapServerError(error: unknown): never {
 // ============================================================================
 
 function createAxiosInstance(): AxiosInstance {
-  const baseURL = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:3001";
+  const baseURL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001";
   const timeout = parseInt(process.env.NEXT_PUBLIC_API_TIMEOUT_MS ?? "30000", 10);
 
   const instance = axios.create({
@@ -197,11 +222,17 @@ const axiosInstance = createAxiosInstance();
 // API Interface & Implementation
 // ============================================================================
 
+export type GetWalletSummaryParams = {
+  token?: string;
+  chainId?: number;
+};
+
 export interface AutopilotAPI {
   pay(request: PayRequest): Promise<PayResponse>;
   rebalance(request: RebalanceRequest): Promise<RebalanceResponse>;
   sweepDust(request: SweepDustRequest): Promise<SweepDustResponse>;
   getStrategies(token: string, params?: GetStrategiesParams): Promise<StrategiesResponse>;
+  getWalletSummary(wallet: string, params?: GetWalletSummaryParams): Promise<WalletSummaryResponse>;
 }
 
 async function pay(request: PayRequest): Promise<PayResponse> {
@@ -246,6 +277,21 @@ async function getStrategies(
   }
 }
 
+async function getWalletSummary(
+  wallet: string,
+  params?: GetWalletSummaryParams
+): Promise<WalletSummaryResponse> {
+  try {
+    const response = await axiosInstance.get<WalletSummaryResponse>(
+      `/wallet/${encodeURIComponent(wallet)}/summary`,
+      { params }
+    );
+    return response.data;
+  } catch (error) {
+    unwrapServerError(error);
+  }
+}
+
 // ============================================================================
 // Exported API Object
 // ============================================================================
@@ -255,6 +301,7 @@ export const autopilotApi: AutopilotAPI = {
   rebalance,
   sweepDust,
   getStrategies,
+  getWalletSummary,
 };
 
 export default autopilotApi;

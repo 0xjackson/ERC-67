@@ -45,6 +45,7 @@ Backend service for the Autopilot Wallet, deployed on Railway.
 ### Wallet Registry
 - `POST /wallets/register` - Register wallet for automation
 - `GET /wallets` - List registered wallets
+- `GET /wallet/:address/summary` - Dashboard summary (strategy info, registration status)
 
 ### Admin
 - `POST /admin/refresh-strategies` - Force cache refresh

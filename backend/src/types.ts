@@ -352,3 +352,46 @@ export type DustSummaryResponse = {
   totalDustValueUsd?: number;
   note: string;
 };
+
+// ============================================================================
+// Wallet Summary (Dashboard)
+// ============================================================================
+
+/**
+ * Current strategy info for a wallet
+ */
+export type CurrentStrategyInfo = {
+  /** Strategy ID (e.g., "morpho-usdc-base") */
+  id: string;
+  /** Protocol name (e.g., "Morpho", "Aave") */
+  protocol: string;
+  /** Strategy name (e.g., "Steakhouse USDC") */
+  name: string;
+  /** Current APY as decimal (e.g., 0.0567 = 5.67%) */
+  apy: number;
+  /** Vault address */
+  vaultAddress: string;
+  /** Adapter address */
+  adapterAddress?: string;
+};
+
+/**
+ * Response for GET /wallet/:address/summary endpoint
+ * Provides dashboard data for a wallet including strategy info
+ */
+export type WalletSummaryResponse = {
+  /** Smart wallet address */
+  wallet: string;
+  /** Owner EOA address (if registered) */
+  owner?: string;
+  /** Chain ID */
+  chainId: number;
+  /** Whether the wallet is registered for automation */
+  isRegistered: boolean;
+  /** Current strategy info (if yield is active) */
+  currentStrategy?: CurrentStrategyInfo;
+  /** Timestamp when data was fetched */
+  fetchedAt: string;
+  /** Data source/freshness info */
+  metadata: StrategyMetadata;
+};

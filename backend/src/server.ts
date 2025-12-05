@@ -21,6 +21,8 @@ import {
   ErrorResponse,
   RiskTier,
   RebalanceTaskInput,
+  WalletSummaryResponse,
+  CurrentStrategyInfo,
 } from "./types";
 import {
   getDustTokens,
@@ -180,6 +182,7 @@ app.get("/", (_req: Request, res: Response) => {
       "/register",
       "/wallets",
       "/wallet/:address",
+      "/wallet/:address/summary",
       "/strategies",
       "/recommend",
       "/recommendations",
@@ -286,6 +289,84 @@ app.get("/wallet/:address", (req: Request, res: Response) => {
   }
 
   return res.json(wallet);
+});
+
+/**
+ * GET /wallet/:address/summary
+ * Get dashboard summary for a wallet including strategy info
+ *
+ * Query params:
+ *   - token: string (optional, default "USDC")
+ *   - chainId: number (optional, default 8453)
+ *
+ * Returns:
+ *   - wallet: string (smart wallet address)
+ *   - owner: string (if registered)
+ *   - isRegistered: boolean
+ *   - currentStrategy: strategy info with APY, protocol name
+ *   - metadata: data source info
+ */
+app.get("/wallet/:address/summary", async (req: Request, res: Response) => {
+  const address = req.params.address.toLowerCase();
+  const token = parseToken(req.query.token);
+  const chainId = parseChainId(req.query.chainId);
+
+  // Validate chainId
+  if (chainId === null) {
+    const errorResponse: ErrorResponse = {
+      error: "Invalid chainId parameter. Must be a positive integer.",
+    };
+    return res.status(400).json(errorResponse);
+  }
+
+  // Validate address format
+  if (!isValidWalletAddress(address)) {
+    const errorResponse: ErrorResponse = {
+      error: "Invalid wallet address format. Must be 0x followed by 40 hex characters.",
+    };
+    return res.status(400).json(errorResponse);
+  }
+
+  try {
+    // Check if wallet is registered
+    const registeredWallet = walletRegistry.get(address);
+    const isRegistered = !!registeredWallet;
+
+    // Get best strategy for this token/chain
+    const strategyResult = await getBestStrategy(token, chainId);
+
+    let currentStrategy: CurrentStrategyInfo | undefined;
+    if (strategyResult.strategy) {
+      const s = strategyResult.strategy;
+      currentStrategy = {
+        id: s.id,
+        protocol: s.protocolName,
+        name: s.id.includes("-") ? s.id.split("-").slice(0, -1).join(" ") : s.protocolName,
+        apy: s.apy,
+        vaultAddress: s.vaultAddress,
+        adapterAddress: s.adapterAddress,
+      };
+    }
+
+    const response: WalletSummaryResponse = {
+      wallet: address,
+      owner: registeredWallet?.owner,
+      chainId,
+      isRegistered,
+      currentStrategy,
+      fetchedAt: new Date().toISOString(),
+      metadata: strategyResult.metadata,
+    };
+
+    return res.json(response);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Unknown error";
+    console.error(`[/wallet/:address/summary] Error:`, message);
+    const errorResponse: ErrorResponse = {
+      error: `Failed to fetch wallet summary: ${message}`,
+    };
+    return res.status(500).json(errorResponse);
+  }
 });
 
 /**
@@ -1008,6 +1089,7 @@ app.listen(PORT, () => {
 ║    POST /register            - Register a new wallet      ║
 ║    GET  /wallets             - List registered wallets    ║
 ║    GET  /wallet/:address     - Get wallet details         ║
+║    GET  /wallet/:address/summary - Dashboard summary      ║
 ║  Scheduler (B3):                                          ║
 ║    GET  /rebalance-tasks     - List all tasks             ║
 ║    POST /rebalance-tasks     - Create a task              ║
