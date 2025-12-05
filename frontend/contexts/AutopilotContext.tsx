@@ -172,19 +172,6 @@ export function AutopilotProvider({ children }: AutopilotProviderProps) {
     loadWallet();
   }, [loadWallet]);
 
-  // Poll for balances every 15 seconds when wallet is connected
-  useEffect(() => {
-    if (!state.walletAddress) return;
-
-    // Initial fetch
-    refreshBalances();
-
-    // Set up polling
-    const interval = setInterval(refreshBalances, 15000);
-
-    return () => clearInterval(interval);
-  }, [state.walletAddress, refreshBalances]);
-
   const value: AutopilotContextValue = {
     ...state,
     loadWallet,
