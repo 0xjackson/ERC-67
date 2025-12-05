@@ -108,11 +108,12 @@ export async function getNonceForEcdsa(walletAddress: Address): Promise<bigint> 
 }
 
 // pm_getPaymasterStubData returns gas limits (for unsigned userOps)
+// Note: paymasterVerificationGasLimit may be missing for some paymasters
 export interface PaymasterStubDataResult {
   paymaster: Address;
   paymasterData: Hex;
-  paymasterVerificationGasLimit: Hex;
-  paymasterPostOpGasLimit: Hex;
+  paymasterVerificationGasLimit?: Hex; // Optional - may not be returned
+  paymasterPostOpGasLimit?: Hex; // Optional - may not be returned
 }
 
 // pm_getPaymasterData only returns paymaster + data (NO gas limits!)
