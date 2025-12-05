@@ -107,6 +107,13 @@ export async function getNonceForEcdsa(walletAddress: Address): Promise<bigint> 
   });
 }
 
+export interface PaymasterDataResult {
+  paymaster: Address;
+  paymasterData: Hex;
+  paymasterVerificationGasLimit: Hex;
+  paymasterPostOpGasLimit: Hex;
+}
+
 // Get paymaster data without requiring signature
 export async function getPaymasterData(
   userOp: {
@@ -125,8 +132,8 @@ export async function getPaymasterData(
     paymasterPostOpGasLimit: Hex | null;
     paymasterData: Hex | null;
   }
-): Promise<{ paymaster: Address; paymasterData: Hex }> {
-  return pimlicoRpc<{ paymaster: Address; paymasterData: Hex }>(
+): Promise<PaymasterDataResult> {
+  return pimlicoRpc<PaymasterDataResult>(
     "pm_getPaymasterData",
     [
       userOp,

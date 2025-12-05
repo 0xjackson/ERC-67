@@ -154,9 +154,11 @@ export default function DashboardPage() {
       });
 
       // 2. User signs the UserOp hash (ONE wallet popup)
+      console.log("[DEBUG] userOpHash from backend:", userOpHash);
       const signature = await signMessageAsync({
         message: { raw: userOpHash as `0x${string}` },
       });
+      console.log("[DEBUG] signature:", signature);
 
       // 3. Submit signed UserOp to bundler
       await submitSigned({ userOp, signature });

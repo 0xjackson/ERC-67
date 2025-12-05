@@ -243,7 +243,7 @@ export async function prepareUserSendOp(
   const paymasterResult = await getPaymasterData(unsignedUserOp);
   console.log(`[bundler] Paymaster: ${paymasterResult.paymaster}`);
 
-  // 7. Build final UserOp with paymaster fields
+  // 7. Build final UserOp with paymaster fields (use gas limits from paymaster response!)
   const userOp: UserOperationV07 = {
     sender: walletAddress,
     nonce: toHex(nonce),
@@ -256,13 +256,13 @@ export async function prepareUserSendOp(
     maxFeePerGas: toHex(maxFeePerGas),
     maxPriorityFeePerGas: toHex(maxPriorityFeePerGas),
     paymaster: paymasterResult.paymaster,
-    paymasterVerificationGasLimit: toHex(USER_SEND_GAS_LIMITS.paymasterVerificationGasLimit),
-    paymasterPostOpGasLimit: toHex(USER_SEND_GAS_LIMITS.paymasterPostOpGasLimit),
+    paymasterVerificationGasLimit: paymasterResult.paymasterVerificationGasLimit,
+    paymasterPostOpGasLimit: paymasterResult.paymasterPostOpGasLimit,
     paymasterData: paymasterResult.paymasterData,
     signature: "0x", // Placeholder - user will sign
   };
 
-  // 8. Compute hash for user to sign
+  // 8. Compute hash for user to sign (must match the userOp exactly!)
   const userOpHash = getUserOpHashV07({
     sender: walletAddress,
     nonce,
@@ -275,8 +275,8 @@ export async function prepareUserSendOp(
     maxFeePerGas,
     maxPriorityFeePerGas,
     paymaster: paymasterResult.paymaster,
-    paymasterVerificationGasLimit: USER_SEND_GAS_LIMITS.paymasterVerificationGasLimit,
-    paymasterPostOpGasLimit: USER_SEND_GAS_LIMITS.paymasterPostOpGasLimit,
+    paymasterVerificationGasLimit: BigInt(paymasterResult.paymasterVerificationGasLimit),
+    paymasterPostOpGasLimit: BigInt(paymasterResult.paymasterPostOpGasLimit),
     paymasterData: paymasterResult.paymasterData,
   });
 
