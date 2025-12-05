@@ -5,12 +5,16 @@ import { useRouter } from "next/navigation";
 import { useAccount, useReadContract } from "wagmi";
 import { CONTRACTS, FACTORY_ABI, MODULE_ABI } from "@/lib/constants";
 import { getSavedWallet, clearSavedWallet } from "@/lib/services/wallet";
+import { autopilotApi, CurrentStrategyInfo } from "@/lib/api/client";
 
 export default function DashboardPage() {
   const router = useRouter();
   const { address: ownerAddress, isConnected } = useAccount();
   const [isRebalancing, setIsRebalancing] = useState(false);
   const [isVerifying, setIsVerifying] = useState(true);
+  const [strategyInfo, setStrategyInfo] = useState<CurrentStrategyInfo | null>(null);
+  const [strategyLoading, setStrategyLoading] = useState(false);
+  const [strategyError, setStrategyError] = useState<string | null>(null);
 
   // Get saved wallet from localStorage
   const savedWallet = typeof window !== "undefined" ? getSavedWallet() : null;
@@ -82,10 +86,36 @@ export default function DashboardPage() {
     setIsVerifying(false);
   }, [isConnected, isCheckingOnChain, onChainAccount, router]);
 
+  // Fetch strategy info from backend
+  useEffect(() => {
+    if (!smartWalletAddress) return;
+
+    const fetchStrategyInfo = async () => {
+      setStrategyLoading(true);
+      setStrategyError(null);
+      try {
+        const summary = await autopilotApi.getWalletSummary(smartWalletAddress);
+        setStrategyInfo(summary.currentStrategy ?? null);
+      } catch (err) {
+        console.error("Failed to fetch strategy info:", err);
+        setStrategyError("Failed to load strategy info");
+      } finally {
+        setStrategyLoading(false);
+      }
+    };
+
+    fetchStrategyInfo();
+  }, [smartWalletAddress]);
+
   // Format balance from wei (6 decimals for USDC)
   const formatUSDC = (value: bigint | undefined) => {
     if (!value) return "0.00";
     return (Number(value) / 1e6).toFixed(2);
+  };
+
+  // Format APY as percentage
+  const formatAPY = (apy: number) => {
+    return (apy * 100).toFixed(2) + "%";
   };
 
   const handleRebalance = () => {
@@ -145,7 +175,7 @@ export default function DashboardPage() {
 
       {/* Rebalance Section */}
       <div className="bg-gray-900 rounded-lg p-6 border border-gray-800">
-        <div className="flex items-center justify-between">
+        <div className="flex items-center justify-between mb-4">
           <div>
             <h2 className="text-lg font-semibold">Auto-Yield Status</h2>
             <p className="text-gray-400 text-sm mt-1">
@@ -159,6 +189,37 @@ export default function DashboardPage() {
           >
             {isRebalancing ? "Rebalancing..." : "Rebalance Now"}
           </button>
+        </div>
+
+        {/* Strategy Info */}
+        <div className="border-t border-gray-800 pt-4">
+          {strategyLoading ? (
+            <div className="flex items-center gap-2 text-gray-400">
+              <div className="w-4 h-4 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
+              <span>Loading strategy info...</span>
+            </div>
+          ) : strategyError ? (
+            <p className="text-red-400 text-sm">{strategyError}</p>
+          ) : strategyInfo ? (
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div>
+                <p className="text-gray-500 text-xs uppercase tracking-wide">Current Strategy</p>
+                <p className="text-white font-medium mt-1">{strategyInfo.protocol}</p>
+              </div>
+              <div>
+                <p className="text-gray-500 text-xs uppercase tracking-wide">Current APY</p>
+                <p className="text-green-400 font-medium mt-1">{formatAPY(strategyInfo.apy)}</p>
+              </div>
+              <div>
+                <p className="text-gray-500 text-xs uppercase tracking-wide">Vault</p>
+                <p className="text-gray-300 text-sm mt-1 font-mono truncate" title={strategyInfo.vaultAddress}>
+                  {strategyInfo.vaultAddress.slice(0, 10)}...{strategyInfo.vaultAddress.slice(-8)}
+                </p>
+              </div>
+            </div>
+          ) : (
+            <p className="text-gray-500 text-sm">No active yield strategy</p>
+          )}
         </div>
       </div>
 
