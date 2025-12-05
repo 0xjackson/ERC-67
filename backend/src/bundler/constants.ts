@@ -10,8 +10,10 @@ export const CONTRACTS = {
 } as const;
 
 // Gas limits for user-signed send operations
+// Note: callGasLimit needs to be high because executeWithAutoYield may query
+// Morpho vaults which make many external calls to check market rates
 export const USER_SEND_GAS_LIMITS = {
-  callGasLimit: 500_000n,
+  callGasLimit: 1_500_000n, // Increased from 500k - Morpho vault queries are expensive
   verificationGasLimit: 150_000n,
   preVerificationGas: 75_000n,
   paymasterVerificationGasLimit: 50_000n,
