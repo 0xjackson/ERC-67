@@ -47,6 +47,19 @@ Backend service for the Autopilot Wallet, deployed on Railway.
 - `GET /wallets` - List registered wallets
 - `GET /wallet/:address/summary` - Dashboard summary (strategy info, registration status)
 
+### Wallet Settings
+- `GET /wallet/:address/settings` - Get wallet settings (preferences for automation)
+- `POST /wallet/:address/settings` - Update wallet settings
+
+Settings include:
+- `checkingThreshold` - Minimum USDC to keep liquid
+- `autoYieldTokens` - Which tokens to auto-yield (USDC, WETH)
+- `dustConsolidationToken` - Token to consolidate dust into (USDC, WETH, ETH)
+- `dustSweepEnabled` - Whether to auto-sweep dust
+- `dustThreshold` - Minimum USD value to consider as dust
+- `riskTolerance` - 1-5 scale (1=very low, 5=very high)
+- `yieldStrategy` - Selected yield strategy (aerodrome, beefy, mock, morpho)
+
 ### Admin
 - `POST /admin/refresh-strategies` - Force cache refresh
 - `GET /admin/cache-status?chainId=8453` - Check cache status
@@ -71,7 +84,50 @@ CDP_API_KEY=your_cdp_api_key
 
 ```bash
 npm install
-npm run dev  # Runs on :3001
+npm run dev  # Runs on :8080
+```
+
+## Testing API Endpoints
+
+### Settings API Examples
+
+**Get wallet settings:**
+```bash
+curl http://localhost:8080/wallet/0x3404A6509Ea5CF38832C71804d3C4C93AFA4aE96/settings
+```
+
+**Update wallet settings:**
+```bash
+curl -X POST http://localhost:8080/wallet/0x3404A6509Ea5CF38832C71804d3C4C93AFA4aE96/settings \
+  -H "Content-Type: application/json" \
+  -d '{
+    "checkingThreshold": "200",
+    "riskTolerance": 4,
+    "dustSweepEnabled": true,
+    "yieldStrategy": "morpho"
+  }'
+```
+
+**Update auto-yield tokens:**
+```bash
+curl -X POST http://localhost:8080/wallet/0x3404A6509Ea5CF38832C71804d3C4C93AFA4aE96/settings \
+  -H "Content-Type: application/json" \
+  -d '{
+    "autoYieldTokens": {
+      "USDC": { "enabled": true },
+      "WETH": { "enabled": true }
+    }
+  }'
+```
+
+**Test validation (should return 400):**
+```bash
+curl -X POST http://localhost:8080/wallet/0x3404A6509Ea5CF38832C71804d3C4C93AFA4aE96/settings \
+  -H "Content-Type: application/json" \
+  -d '{
+    "checkingThreshold": "-100",
+    "riskTolerance": 10
+  }'
 ```
 
 ## Deployment

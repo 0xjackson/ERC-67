@@ -395,3 +395,104 @@ export type WalletSummaryResponse = {
   /** Data source/freshness info */
   metadata: StrategyMetadata;
 };
+
+// ============================================================================
+// Wallet Settings
+// ============================================================================
+
+/**
+ * Token-specific yield configuration
+ */
+export type TokenYieldConfig = {
+  enabled: boolean;
+};
+
+/**
+ * Auto-yield token configuration for supported tokens
+ */
+export type AutoYieldTokens = {
+  USDC: TokenYieldConfig;
+  WETH: TokenYieldConfig;
+};
+
+/**
+ * Allowed consolidation tokens for dust sweep
+ */
+export type DustConsolidationToken = "USDC" | "WETH" | "ETH";
+
+/**
+ * Allowed yield strategy identifiers
+ */
+export type YieldStrategyId = "aerodrome" | "beefy" | "mock" | "morpho";
+
+/**
+ * Wallet settings - user preferences for automation
+ */
+export type WalletSettings = {
+  /** Minimum USDC to keep in checking (as string for precision) */
+  checkingThreshold: string;
+  /** Per-token yield enablement */
+  autoYieldTokens: AutoYieldTokens;
+  /** Token to consolidate dust into */
+  dustConsolidationToken: DustConsolidationToken;
+  /** Whether dust sweep is enabled */
+  dustSweepEnabled: boolean;
+  /** Minimum USD value to consider as dust (as string for precision) */
+  dustThreshold: string;
+  /** Risk tolerance 1-5 (1=very low, 5=very high) */
+  riskTolerance: number;
+  /** Selected yield strategy identifier */
+  yieldStrategy: YieldStrategyId | string;
+};
+
+/**
+ * Default settings for new wallets
+ */
+export const DEFAULT_WALLET_SETTINGS: WalletSettings = {
+  checkingThreshold: "100",
+  autoYieldTokens: {
+    USDC: { enabled: true },
+    WETH: { enabled: false },
+  },
+  dustConsolidationToken: "USDC",
+  dustSweepEnabled: true,
+  dustThreshold: "1.00",
+  riskTolerance: 3,
+  yieldStrategy: "morpho",
+};
+
+/**
+ * Allowed values for validation
+ */
+export const ALLOWED_CONSOLIDATION_TOKENS: DustConsolidationToken[] = ["USDC", "WETH", "ETH"];
+export const ALLOWED_YIELD_STRATEGIES: string[] = ["aerodrome", "beefy", "mock", "morpho"];
+
+/**
+ * Response for GET /wallet/:address/settings
+ */
+export type WalletSettingsResponse = {
+  wallet: string;
+  settings: WalletSettings;
+  updatedAt?: string;
+};
+
+/**
+ * Request body for POST /wallet/:address/settings
+ */
+export type WalletSettingsInput = Partial<WalletSettings>;
+
+/**
+ * Validation error detail
+ */
+export type ValidationError = {
+  field: string;
+  message: string;
+};
+
+/**
+ * Response for validation errors
+ */
+export type ValidationErrorResponse = {
+  error: string;
+  validationErrors: ValidationError[];
+};

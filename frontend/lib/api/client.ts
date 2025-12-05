@@ -142,6 +142,49 @@ export type ErrorResponse = {
 };
 
 // ============================================================================
+// Wallet Settings Types
+// ============================================================================
+
+export type TokenYieldConfig = {
+  enabled: boolean;
+};
+
+export type AutoYieldTokens = {
+  USDC: TokenYieldConfig;
+  WETH: TokenYieldConfig;
+};
+
+export type DustConsolidationToken = "USDC" | "WETH" | "ETH";
+
+export type WalletSettings = {
+  checkingThreshold: string;
+  autoYieldTokens: AutoYieldTokens;
+  dustConsolidationToken: DustConsolidationToken;
+  dustSweepEnabled: boolean;
+  dustThreshold: string;
+  riskTolerance: number;
+  yieldStrategy: string;
+};
+
+export type WalletSettingsResponse = {
+  wallet: string;
+  settings: WalletSettings;
+  updatedAt?: string;
+};
+
+export type WalletSettingsInput = Partial<WalletSettings>;
+
+export type ValidationError = {
+  field: string;
+  message: string;
+};
+
+export type ValidationErrorResponse = {
+  error: string;
+  validationErrors: ValidationError[];
+};
+
+// ============================================================================
 // API Error Handling
 // ============================================================================
 
@@ -233,6 +276,8 @@ export interface AutopilotAPI {
   sweepDust(request: SweepDustRequest): Promise<SweepDustResponse>;
   getStrategies(token: string, params?: GetStrategiesParams): Promise<StrategiesResponse>;
   getWalletSummary(wallet: string, params?: GetWalletSummaryParams): Promise<WalletSummaryResponse>;
+  getWalletSettings(wallet: string): Promise<WalletSettingsResponse>;
+  saveWalletSettings(wallet: string, settings: WalletSettingsInput): Promise<WalletSettingsResponse>;
 }
 
 async function pay(request: PayRequest): Promise<PayResponse> {
@@ -292,6 +337,32 @@ async function getWalletSummary(
   }
 }
 
+async function getWalletSettings(wallet: string): Promise<WalletSettingsResponse> {
+  try {
+    const response = await axiosInstance.get<WalletSettingsResponse>(
+      `/wallet/${encodeURIComponent(wallet)}/settings`
+    );
+    return response.data;
+  } catch (error) {
+    unwrapServerError(error);
+  }
+}
+
+async function saveWalletSettings(
+  wallet: string,
+  settings: WalletSettingsInput
+): Promise<WalletSettingsResponse> {
+  try {
+    const response = await axiosInstance.post<WalletSettingsResponse>(
+      `/wallet/${encodeURIComponent(wallet)}/settings`,
+      settings
+    );
+    return response.data;
+  } catch (error) {
+    unwrapServerError(error);
+  }
+}
+
 // ============================================================================
 // Exported API Object
 // ============================================================================
@@ -302,6 +373,8 @@ export const autopilotApi: AutopilotAPI = {
   sweepDust,
   getStrategies,
   getWalletSummary,
+  getWalletSettings,
+  saveWalletSettings,
 };
 
 export default autopilotApi;

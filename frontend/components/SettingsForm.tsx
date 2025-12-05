@@ -1,7 +1,8 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
+import { useAccount, useReadContract } from "wagmi";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -11,24 +12,18 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import {
+  autopilotApi,
+  WalletSettings,
+  ApiError,
+  ValidationErrorResponse,
+} from "@/lib/api/client";
+import { CONTRACTS, FACTORY_ABI } from "@/lib/constants";
+import { getSavedWallet } from "@/lib/services/wallet";
 
-// Types for settings
-export interface TokenYieldConfig {
-  enabled: boolean;
-}
-
-export interface WalletSettings {
-  checkingThreshold: string;
-  autoYieldTokens: {
-    USDC: TokenYieldConfig;
-    WETH: TokenYieldConfig;
-  };
-  dustConsolidationToken: "USDC" | "WETH" | "ETH";
-  dustSweepEnabled: boolean;
-  dustThreshold: string;
-  riskTolerance: number; // 1-5 scale
-  yieldStrategy: string;
-}
+// Re-export types for backwards compatibility
+export type { WalletSettings };
+export type TokenYieldConfig = { enabled: boolean };
 
 const SETTINGS_STORAGE_KEY = "autopilot-wallet-settings";
 
@@ -42,7 +37,7 @@ const defaultSettings: WalletSettings = {
   dustSweepEnabled: true,
   dustThreshold: "1.00",
   riskTolerance: 3,
-  yieldStrategy: "aerodrome",
+  yieldStrategy: "morpho",
 };
 
 const consolidationTokenOptions = [
@@ -62,37 +57,119 @@ const riskLabels = ["Very Low", "Low", "Medium", "High", "Very High"];
 export function SettingsForm() {
   const [settings, setSettings] = useState<WalletSettings>(defaultSettings);
   const [isSaving, setIsSaving] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
   const [showSuccess, setShowSuccess] = useState(false);
-  const [isLoaded, setIsLoaded] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [validationErrors, setValidationErrors] = useState<string[]>([]);
 
-  // Load settings from localStorage on mount
-  useEffect(() => {
-    const stored = localStorage.getItem(SETTINGS_STORAGE_KEY);
-    if (stored) {
-      try {
-        const parsed = JSON.parse(stored) as WalletSettings;
-        setSettings(parsed);
-      } catch {
-        // If parsing fails, use defaults
-        setSettings(defaultSettings);
+  // Get connected wallet address
+  const { address: ownerAddress, isConnected } = useAccount();
+
+  // Get saved wallet from localStorage
+  const savedWallet = typeof window !== "undefined" ? getSavedWallet() : null;
+
+  // Get smart wallet address from factory contract
+  const { data: onChainAccount } = useReadContract({
+    address: CONTRACTS.FACTORY,
+    abi: FACTORY_ABI,
+    functionName: "accountOf",
+    args: ownerAddress ? [ownerAddress] : undefined,
+    query: {
+      enabled: !!ownerAddress,
+    },
+  });
+
+  // Determine the smart wallet address
+  const smartWalletAddress =
+    onChainAccount && onChainAccount !== "0x0000000000000000000000000000000000000000"
+      ? onChainAccount
+      : savedWallet?.address;
+
+  // Load settings from backend on mount (with localStorage fallback)
+  const loadSettings = useCallback(async () => {
+    if (!smartWalletAddress) {
+      // No wallet - try localStorage as fallback for cached settings
+      const stored = localStorage.getItem(SETTINGS_STORAGE_KEY);
+      if (stored) {
+        try {
+          const parsed = JSON.parse(stored) as WalletSettings;
+          setSettings(parsed);
+        } catch {
+          setSettings(defaultSettings);
+        }
       }
+      setIsLoading(false);
+      return;
     }
-    setIsLoaded(true);
-  }, []);
 
-  const handleSave = () => {
+    setIsLoading(true);
+    setError(null);
+
+    try {
+      const response = await autopilotApi.getWalletSettings(smartWalletAddress);
+      setSettings(response.settings);
+      // Cache to localStorage for instant feedback on next load
+      localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify(response.settings));
+    } catch (err) {
+      console.error("Failed to load settings from backend:", err);
+      // Fall back to localStorage
+      const stored = localStorage.getItem(SETTINGS_STORAGE_KEY);
+      if (stored) {
+        try {
+          const parsed = JSON.parse(stored) as WalletSettings;
+          setSettings(parsed);
+        } catch {
+          setSettings(defaultSettings);
+        }
+      }
+      // Don't show error for initial load - just use defaults/cache
+    } finally {
+      setIsLoading(false);
+    }
+  }, [smartWalletAddress]);
+
+  useEffect(() => {
+    loadSettings();
+  }, [loadSettings]);
+
+  const handleSave = async () => {
     setIsSaving(true);
     setShowSuccess(false);
+    setError(null);
+    setValidationErrors([]);
 
-    // Save to localStorage
-    setTimeout(() => {
-      localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify(settings));
+    // Always save to localStorage for instant local feedback
+    localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify(settings));
+
+    // If no wallet, just save locally
+    if (!smartWalletAddress) {
       setIsSaving(false);
       setShowSuccess(true);
-
-      // Hide success message after 3 seconds
       setTimeout(() => setShowSuccess(false), 3000);
-    }, 500);
+      return;
+    }
+
+    try {
+      await autopilotApi.saveWalletSettings(smartWalletAddress, settings);
+      setShowSuccess(true);
+      setTimeout(() => setShowSuccess(false), 3000);
+    } catch (err) {
+      console.error("Failed to save settings to backend:", err);
+
+      if (err instanceof ApiError) {
+        // Check for validation errors
+        const responseData = err.originalError?.response?.data as ValidationErrorResponse | undefined;
+        if (responseData?.validationErrors) {
+          setValidationErrors(responseData.validationErrors.map((e) => `${e.field}: ${e.message}`));
+        } else {
+          setError(err.message);
+        }
+      } else {
+        setError("Failed to save settings. Please try again.");
+      }
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   const updateTokenYield = (token: "USDC" | "WETH", enabled: boolean) => {
@@ -105,23 +182,70 @@ export function SettingsForm() {
     }));
   };
 
-  // Don't render until settings are loaded from localStorage
-  if (!isLoaded) {
+  // Show loading state
+  if (isLoading) {
     return (
       <div className="flex items-center justify-center py-12">
-        <div className="text-gray-400">Loading settings...</div>
+        <div className="flex flex-col items-center gap-4">
+          <div className="w-8 h-8 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
+          <span className="text-gray-400">Loading settings...</span>
+        </div>
+      </div>
+    );
+  }
+
+  // Show prompt if no wallet is connected
+  if (!isConnected) {
+    return (
+      <div className="text-center py-12">
+        <p className="text-gray-400 mb-4">Please connect your wallet to manage settings.</p>
+        <Button asChild>
+          <Link href="/">Connect Wallet</Link>
+        </Button>
       </div>
     );
   }
 
   return (
     <div className="space-y-6">
+      {/* No wallet warning */}
+      {!smartWalletAddress && (
+        <Alert>
+          <AlertTitle>No Autopilot Wallet</AlertTitle>
+          <AlertDescription>
+            Settings are saved locally. Create an Autopilot Wallet to sync settings to the backend.
+          </AlertDescription>
+        </Alert>
+      )}
+
       {/* Success Alert */}
       {showSuccess && (
         <Alert variant="success">
           <AlertTitle>Settings Saved</AlertTitle>
           <AlertDescription>
             Your wallet preferences have been updated successfully.
+          </AlertDescription>
+        </Alert>
+      )}
+
+      {/* Error Alert */}
+      {error && (
+        <Alert variant="destructive">
+          <AlertTitle>Error</AlertTitle>
+          <AlertDescription>{error}</AlertDescription>
+        </Alert>
+      )}
+
+      {/* Validation Errors */}
+      {validationErrors.length > 0 && (
+        <Alert variant="destructive">
+          <AlertTitle>Validation Error</AlertTitle>
+          <AlertDescription>
+            <ul className="list-disc list-inside">
+              {validationErrors.map((err, i) => (
+                <li key={i}>{err}</li>
+              ))}
+            </ul>
           </AlertDescription>
         </Alert>
       )}
