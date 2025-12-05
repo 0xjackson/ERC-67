@@ -17,7 +17,7 @@ export const CONTRACTS = {
 } as const;
 
 // Backend API URL
-export const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001";
+export const API_URL = process.env.NEXT_PUBLIC_API_URL || "https://autopilot-account-production.up.railway.app";
 
 // AutopilotFactory ABI - matches AutopilotFactory.sol
 export const FACTORY_ABI = [

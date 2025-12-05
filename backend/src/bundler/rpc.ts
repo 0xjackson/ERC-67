@@ -1,7 +1,7 @@
 import { createPublicClient, http, toHex, type Hex, type Address } from "viem";
 import { base } from "viem/chains";
 import { CONTRACTS, ENTRYPOINT_ABI, CHAIN_ID } from "./constants";
-import { getNonceKey } from "./userOp";
+import { getNonceKey, getNonceKeyForRoot } from "./userOp";
 
 const PIMLICO_API_KEY = process.env.PIMLICO_API_KEY;
 const PIMLICO_URL = `https://api.pimlico.io/v2/base/rpc?apikey=${PIMLICO_API_KEY}`;
@@ -95,9 +95,10 @@ export async function getNonce(walletAddress: Address): Promise<bigint> {
   });
 }
 
-// Get nonce using ECDSA validator (for user-signed ops)
+// Get nonce using root validator (ECDSA validator for user-signed ops)
+// Uses VALIDATION_TYPE_ROOT so Kernel uses the stored rootValidator
 export async function getNonceForEcdsa(walletAddress: Address): Promise<bigint> {
-  const key = getNonceKey(CONTRACTS.ECDSA_VALIDATOR);
+  const key = getNonceKeyForRoot();
   return publicClient.readContract({
     address: CONTRACTS.ENTRYPOINT,
     abi: ENTRYPOINT_ABI,

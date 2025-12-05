@@ -244,7 +244,7 @@ function unwrapServerError(error: unknown): never {
 // ============================================================================
 
 function createAxiosInstance(): AxiosInstance {
-  const baseURL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001";
+  const baseURL = process.env.NEXT_PUBLIC_API_URL ?? "https://autopilot-account-production.up.railway.app";
   const timeout = parseInt(process.env.NEXT_PUBLIC_API_TIMEOUT_MS ?? "30000", 10);
 
   const instance = axios.create({

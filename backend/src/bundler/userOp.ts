@@ -11,14 +11,33 @@ import {
 import { CONTRACTS, CHAIN_ID } from "./constants";
 
 const VALIDATOR_MODE_DEFAULT = "0x00" as Hex;
+const VALIDATOR_TYPE_ROOT = "0x00" as Hex;
 const VALIDATOR_TYPE_VALIDATOR = "0x01" as Hex;
 
+// For non-root validators (like AutomationValidator)
 export function getNonceKey(validatorAddr: Address, nonceKey: bigint = 0n): bigint {
   const encoding = pad(
     concat([
       VALIDATOR_MODE_DEFAULT,
       VALIDATOR_TYPE_VALIDATOR,
       validatorAddr,
+      pad(toHex(nonceKey), { size: 2 }),
+    ]),
+    { size: 24 }
+  ) as Hex;
+  return BigInt(encoding);
+}
+
+// For root validator (ECDSA validator) - uses VALIDATION_TYPE_ROOT
+// Kernel will use the stored rootValidator, so we don't need to include the address
+export function getNonceKeyForRoot(nonceKey: bigint = 0n): bigint {
+  // For root validation, the nonce key is just mode + type + zeros + nonceKey
+  // Kernel ignores the validator address bytes for root validation
+  const encoding = pad(
+    concat([
+      VALIDATOR_MODE_DEFAULT,
+      VALIDATOR_TYPE_ROOT,
+      pad("0x", { size: 20 }), // 20 zero bytes (ignored for root)
       pad(toHex(nonceKey), { size: 2 }),
     ]),
     { size: 24 }
