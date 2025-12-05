@@ -6,7 +6,34 @@ Last Updated: December 5, 2024
 
 ---
 
-## v5 Contracts (CURRENT - executeFromExecutor fix)
+## v6 Contracts (CURRENT - Sweep Functionality)
+
+| Contract | Address | Description |
+|----------|---------|-------------|
+| **AutopilotFactory** | [`0x6fa5d5CA703e98213Fdd641061a0D739a79341F3`](https://basescan.org/address/0x6fa5d5CA703e98213Fdd641061a0D739a79341F3) | Factory v6 - with sweep selector whitelisted |
+| **AutoYieldModule** | [`0x2B1E677C05e2C525605264C81dC401AB9E069F6C`](https://basescan.org/address/0x2B1E677C05e2C525605264C81dC401AB9E069F6C) | Module v6 - **sweepDustAndCompound()** |
+| **AutomationValidator** | [`0x47A6b2f3bD564F9DeA17AcF8AbE73890c546900b`](https://basescan.org/address/0x47A6b2f3bD564F9DeA17AcF8AbE73890c546900b) | Reused from v3 |
+
+**v6 Features:**
+- Added `sweepDustAndCompound(router, consolidationToken, dustTokens[])` function
+- Swaps dust tokens (DEGEN, AERO, etc.) to USDC via Aerodrome
+- Deposits swept USDC to yield vault
+- Selector `0x8fd059b6` whitelisted in AutomationValidator
+
+**v6 Quick Copy-Paste:**
+```typescript
+export const CONTRACTS = {
+  FACTORY: "0x6fa5d5CA703e98213Fdd641061a0D739a79341F3",
+  MODULE: "0x2B1E677C05e2C525605264C81dC401AB9E069F6C",
+  VALIDATOR: "0x47A6b2f3bD564F9DeA17AcF8AbE73890c546900b",
+  USDC: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+  AERODROME_ROUTER: "0xcF77a3Ba9A5CA399B7c97c74d54e5b1Beb874E43",
+} as const;
+```
+
+---
+
+## v5 Contracts (PREVIOUS - executeFromExecutor fix)
 
 | Contract | Address | Description |
 |----------|---------|-------------|
@@ -91,7 +118,16 @@ AUTOMATION_PUBLIC_ADDRESS=0xD78F5099987389e33bD6Ec15FF3Ca4dBedD507f3
 
 ## Deployment History
 
-### v5 - December 5, 2024 (CURRENT)
+### v6 - December 5, 2024 (CURRENT - Sweep)
+- Added `sweepDustAndCompound()` function for dust token consolidation
+- Swaps dust tokens (DEGEN, AERO, BRETT, etc.) to USDC via Aerodrome router
+- Deposits swept USDC to yield vault automatically
+- Selector `0x8fd059b6` whitelisted in AutomationValidator
+- AutoYieldModule v6: `0x2B1E677C05e2C525605264C81dC401AB9E069F6C`
+- AutopilotFactory v6: `0x6fa5d5CA703e98213Fdd641061a0D739a79341F3`
+- Reuses AutomationValidator from v3
+
+### v5 - December 5, 2024 (PREVIOUS)
 - **Critical fix:** Changed `_executeOnKernel()` to use `executeFromExecutor()` instead of `execute()`
 - Root cause: When module called back into Kernel via `execute()`, it triggered root validator hooks
 - This caused "ECDSAValidator: sender is not owner" errors during UserOp simulation

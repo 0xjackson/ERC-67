@@ -29,6 +29,7 @@ import {
   WalletCheckResult,
 } from "./chainReader";
 import { getRegisteredWallets } from "./server";
+import { getDustSources } from "./dustService";
 import type { Address } from "viem";
 
 const DEFAULT_TICK_INTERVAL_MS = 30 * 1000;
@@ -229,7 +230,13 @@ export async function executeTask(
           userOpHash = await submitRebalanceUserOp(task.wallet as Address, USDC_ADDRESS);
           break;
         case "sweepDust":
-          userOpHash = await submitSweepDustUserOp(task.wallet as Address);
+          // Get dust token addresses for Base mainnet (8453)
+          const dustTokenAddresses = getDustSources(8453).map(t => t.tokenAddress as Address);
+          if (dustTokenAddresses.length > 0) {
+            userOpHash = await submitSweepDustUserOp(task.wallet as Address, dustTokenAddresses);
+          } else {
+            throw new Error("No dust tokens configured for sweep");
+          }
           break;
         default:
           throw new Error(`Unknown action: ${task.action}`);

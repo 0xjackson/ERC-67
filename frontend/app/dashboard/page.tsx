@@ -1,11 +1,12 @@
 "use client";
 
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { useAccount, useReadContract, useSignMessage } from "wagmi";
 import { CONTRACTS, FACTORY_ABI, MODULE_ABI } from "@/lib/constants";
 import { getSavedWallet, clearSavedWallet } from "@/lib/services/wallet";
 import { prepareSend, submitSigned, autopilotApi, type CurrentStrategyInfo } from "@/lib/api/client";
+import { DustBalances } from "@/components/DustBalances";
 
 type SendStatus = "idle" | "loading" | "success" | "error";
 
@@ -33,6 +34,9 @@ export default function DashboardPage() {
   // Strategy info state
   const [currentStrategy, setCurrentStrategy] = useState<CurrentStrategyInfo | null>(null);
   const [isLoadingStrategy, setIsLoadingStrategy] = useState(false);
+
+  // Dust refresh key - increment to force DustBalances to refetch
+  const [dustRefreshKey, setDustRefreshKey] = useState(0);
 
   // Get saved wallet from localStorage
   const savedWallet = typeof window !== "undefined" ? getSavedWallet() : null;
@@ -274,6 +278,60 @@ export default function DashboardPage() {
           )}
         </div>
       </div>
+
+      {/* Strategy Info Section */}
+      {(currentStrategy || isLoadingStrategy) && (
+        <div className="bg-white rounded-lg p-6 border border-gray-200 shadow-sm">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            <div>
+              <p className="text-gray-500 text-xs uppercase tracking-wide mb-1">Current Strategy</p>
+              {isLoadingStrategy ? (
+                <div className="h-6 w-32 bg-gray-100 rounded animate-pulse" />
+              ) : (
+                <p className="text-gray-900 font-medium">{currentStrategy?.name || "None"}</p>
+              )}
+            </div>
+            <div>
+              <p className="text-gray-500 text-xs uppercase tracking-wide mb-1">Current APY</p>
+              {isLoadingStrategy ? (
+                <div className="h-6 w-20 bg-gray-100 rounded animate-pulse" />
+              ) : (
+                <p className="text-green-600 font-medium">
+                  {currentStrategy ? `${(currentStrategy.apy * 100).toFixed(2)}%` : "—"}
+                </p>
+              )}
+            </div>
+            <div>
+              <p className="text-gray-500 text-xs uppercase tracking-wide mb-1">Vault</p>
+              {isLoadingStrategy ? (
+                <div className="h-6 w-40 bg-gray-100 rounded animate-pulse" />
+              ) : currentStrategy?.vaultAddress ? (
+                <p className="text-gray-800 font-mono text-sm">
+                  {currentStrategy.vaultAddress.slice(0, 10)}...{currentStrategy.vaultAddress.slice(-6)}
+                </p>
+              ) : (
+                <p className="text-gray-400">—</p>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Dust Balances Section */}
+      {smartWalletAddress && (
+        <DustBalances
+          key={dustRefreshKey}
+          walletAddress={smartWalletAddress}
+          onSweepComplete={() => {
+            setDustRefreshKey((k) => k + 1);
+            setToast({
+              message: "Dust tokens swept to USDC and deposited to yield!",
+              type: "success",
+            });
+          }}
+        />
+      )}
+
 
       {/* Send Section */}
       <div className="bg-white rounded-xl p-6 border border-gray-200 space-y-6 shadow-lg">

@@ -34,6 +34,7 @@ contract AutoYieldModule is IExecutorModule {
     error VaultNotAllowed();
     error InsufficientBalance();
     error UnauthorizedCaller();
+    error InvalidRouter();
 
     event Initialized(address indexed account, address indexed vault);
     event ThresholdUpdated(address indexed account, address indexed token, uint256 threshold);
@@ -45,6 +46,7 @@ contract AutoYieldModule is IExecutorModule {
     event Rebalanced(address indexed account, address indexed token, uint256 deposited);
     event StrategyMigrated(address indexed account, address indexed token, address from, address to);
     event ExecutedWithAutoYield(address indexed account, address indexed to, uint256 value);
+    event DustSwept(address indexed account, address indexed consolidationToken, uint256 tokensSwept, uint256 amountConsolidated);
 
     mapping(address account => bool) public isInitialized;
     mapping(address account => mapping(address token => uint256)) public checkingThreshold;
@@ -360,5 +362,76 @@ contract AutoYieldModule is IExecutorModule {
         }
         token;
         return 0;
+    }
+
+    /// @dev Aerodrome Route struct for swap routing
+    struct Route {
+        address from;
+        address to;
+        bool stable;
+        address factory;
+    }
+
+    /**
+     * @notice Sweep dust tokens to consolidation token and deposit surplus to yield
+     * @dev Backend determines which tokens are dust (< $1.10) and only calls when total >= $3
+     * @param router DEX router address (e.g., Aerodrome)
+     * @param consolidationToken Token to swap dust into (e.g., USDC)
+     * @param dustTokens Array of dust token addresses to sweep
+     */
+    function sweepDustAndCompound(
+        address router,
+        address consolidationToken,
+        address[] calldata dustTokens
+    ) external onlyAuthorized(msg.sender) {
+        address account = msg.sender;
+        if (!isInitialized[account]) revert NotInitialized();
+        if (router == address(0)) revert InvalidRouter();
+
+        uint256 balanceBefore = IERC20(consolidationToken).balanceOf(account);
+        uint256 swappedCount = 0;
+
+        // Swap each dust token to consolidation token
+        for (uint256 i = 0; i < dustTokens.length; i++) {
+            address dustToken = dustTokens[i];
+            if (dustToken == consolidationToken) continue;
+
+            uint256 balance = IERC20(dustToken).balanceOf(account);
+            if (balance == 0) continue;
+
+            // Approve router
+            bytes memory approveData = abi.encodeCall(IERC20.approve, (router, balance));
+            _executeOnKernel(account, dustToken, 0, approveData);
+
+            // Build Aerodrome Route array and swap
+            Route[] memory routes = new Route[](1);
+            routes[0] = Route(dustToken, consolidationToken, false, address(0));
+
+            bytes memory swapData = abi.encodeWithSignature(
+                "swapExactTokensForTokens(uint256,uint256,(address,address,bool,address)[],address,uint256)",
+                balance,
+                0, // Accept any amount out (slippage handled by backend decision to sweep)
+                routes,
+                account,
+                block.timestamp + 300
+            );
+            _executeOnKernel(account, router, 0, swapData);
+            swappedCount++;
+        }
+
+        uint256 balanceAfter = IERC20(consolidationToken).balanceOf(account);
+        uint256 consolidated = balanceAfter - balanceBefore;
+
+        // Deposit surplus to yield if vault is configured
+        address vault = currentVault[account][consolidationToken];
+        uint256 threshold = checkingThreshold[account][consolidationToken];
+
+        if (vault != address(0) && balanceAfter > threshold) {
+            uint256 surplus = balanceAfter - threshold;
+            _depositToYield(account, vault, consolidationToken, surplus);
+            emit Deposited(account, consolidationToken, surplus);
+        }
+
+        emit DustSwept(account, consolidationToken, swappedCount, consolidated);
     }
 }

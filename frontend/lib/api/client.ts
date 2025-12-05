@@ -46,8 +46,19 @@ export type DustTokenMeta = {
 export type DustBalance = {
   token: DustTokenMeta;
   balance: string;
+  balanceFormatted?: string;
   balanceUsd?: number;
   isDust: boolean;
+};
+
+export type DustSummaryResponse = {
+  wallet: string;
+  chainId: number;
+  consolidationToken: string;
+  dustBalances: DustBalance[];
+  totalDustValueUsd?: number;
+  sweepableTokens?: string[];
+  note?: string;
 };
 
 // ============================================================================
@@ -72,6 +83,7 @@ export type RebalanceRequest = {
 
 export type SweepDustRequest = {
   wallet: string;
+  dustTokens: string[];
   chainId?: number;
   consolidationToken?: string;
 };
@@ -275,6 +287,11 @@ export type GetWalletSummaryParams = {
   chainId?: number;
 };
 
+export type GetDustSummaryParams = {
+  chainId?: number;
+  consolidation?: string;
+};
+
 export interface AutopilotAPI {
   pay(request: PayRequest): Promise<PayResponse>;
   rebalance(request: RebalanceRequest): Promise<RebalanceResponse>;
@@ -284,6 +301,7 @@ export interface AutopilotAPI {
   getWalletSettings(wallet: string): Promise<WalletSettingsResponse>;
   saveWalletSettings(wallet: string, settings: WalletSettingsInput): Promise<WalletSettingsResponse>;
   registerWallet(wallet: string, owner: string): Promise<RegisterWalletResponse>;
+  getDustSummary(wallet: string, params?: GetDustSummaryParams): Promise<DustSummaryResponse>;
 }
 
 async function pay(request: PayRequest): Promise<PayResponse> {
@@ -384,6 +402,21 @@ async function registerWallet(
   }
 }
 
+async function getDustSummary(
+  wallet: string,
+  params?: GetDustSummaryParams
+): Promise<DustSummaryResponse> {
+  try {
+    const response = await axiosInstance.get<DustSummaryResponse>(
+      "/dust/summary",
+      { params: { wallet, ...params } }
+    );
+    return response.data;
+  } catch (error) {
+    unwrapServerError(error);
+  }
+}
+
 // ============================================================================
 // Exported API Object
 // ============================================================================
@@ -397,6 +430,7 @@ export const autopilotApi: AutopilotAPI = {
   getWalletSettings,
   saveWalletSettings,
   registerWallet,
+  getDustSummary,
 };
 
 // ============================================================================
@@ -415,6 +449,18 @@ export type PrepareSendResponse = {
   userOpHash: string;
 };
 
+export type PrepareSweepParams = {
+  walletAddress: string;
+  dustTokens: string[];
+  router?: string;
+  consolidationToken?: string;
+};
+
+export type PrepareSweepResponse = {
+  userOp: Record<string, unknown>;
+  userOpHash: string;
+};
+
 export type SubmitSignedParams = {
   userOp: Record<string, unknown>;
   signature: string;
@@ -429,6 +475,16 @@ export type SubmitSignedResponse = {
 export async function prepareSend(params: PrepareSendParams): Promise<PrepareSendResponse> {
   try {
     const response = await axiosInstance.post<PrepareSendResponse>("/ops/prepare-send", params);
+    return response.data;
+  } catch (error) {
+    unwrapServerError(error);
+  }
+}
+
+// Prepare a sweep UserOp (user-signed, not automation)
+export async function prepareSweep(params: PrepareSweepParams): Promise<PrepareSweepResponse> {
+  try {
+    const response = await axiosInstance.post<PrepareSweepResponse>("/ops/prepare-sweep", params);
     return response.data;
   } catch (error) {
     unwrapServerError(error);

@@ -8,6 +8,8 @@ import {AutomationValidator} from "../src/AutomationValidator.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {IERC4626} from "@openzeppelin/contracts/interfaces/IERC4626.sol";
 import {IKernel, IKernelFactory, IHook, ValidationId, ValidatorLib} from "../src/interfaces/IKernel.sol";
+import {PackedUserOperation} from "../src/interfaces/PackedUserOperation.sol";
+import {MessageHashUtils} from "@openzeppelin/contracts/utils/cryptography/MessageHashUtils.sol";
 
 /**
  * @title AutoYieldModuleForkTest
@@ -292,5 +294,111 @@ contract AutoYieldModuleForkTest is Test {
 
         console.log("");
         console.log("=== Test Passed ===");
+    }
+
+    // ============ Dust Sweep Tests ============
+
+    address constant AERODROME_ROUTER = 0xcF77a3Ba9A5CA399B7c97c74d54e5b1Beb874E43;
+    address constant DEGEN = 0x4ed4E862860beD51a9570b96d89aF5E1B0Efefed;
+    address constant AERO = 0x940181a94A35A4569E4529A3CDfB74e38FD98631;
+    address constant WETH = 0x4200000000000000000000000000000000000006;
+
+    function test_fork_sweepDust_singleToken() public onlyFork {
+        // Give wallet some DEGEN
+        uint256 degenAmount = 1000e18; // 1000 DEGEN
+        deal(DEGEN, wallet, degenAmount);
+
+        uint256 degenBefore = IERC20(DEGEN).balanceOf(wallet);
+        uint256 sharesBefore = vault.balanceOf(wallet);
+
+        assertEq(degenBefore, degenAmount, "Should have DEGEN");
+
+        // Build dust tokens array
+        address[] memory dustTokens = new address[](1);
+        dustTokens[0] = DEGEN;
+
+        // Call sweep from wallet (as owner)
+        vm.prank(wallet);
+        module.sweepDustAndCompound(AERODROME_ROUTER, USDC, dustTokens);
+
+        uint256 degenAfter = IERC20(DEGEN).balanceOf(wallet);
+        uint256 sharesAfter = vault.balanceOf(wallet);
+
+        assertEq(degenAfter, 0, "DEGEN should be swept");
+        assertGt(sharesAfter, sharesBefore, "Should have gained vault shares from swapped USDC");
+
+        console.log("DEGEN swapped:", degenAmount / 1e18);
+        console.log("Vault shares gained:", (sharesAfter - sharesBefore) / 1e18);
+    }
+
+    function test_fork_sweepDust_multipleTokens() public onlyFork {
+        // Give wallet some dust tokens
+        uint256 degenAmount = 500e18;
+        uint256 aeroAmount = 10e18;
+
+        deal(DEGEN, wallet, degenAmount);
+        deal(AERO, wallet, aeroAmount);
+
+        uint256 sharesBefore = vault.balanceOf(wallet);
+
+        // Build dust tokens array
+        address[] memory dustTokens = new address[](2);
+        dustTokens[0] = DEGEN;
+        dustTokens[1] = AERO;
+
+        // Call sweep
+        vm.prank(wallet);
+        module.sweepDustAndCompound(AERODROME_ROUTER, USDC, dustTokens);
+
+        uint256 sharesAfter = vault.balanceOf(wallet);
+
+        assertEq(IERC20(DEGEN).balanceOf(wallet), 0, "DEGEN should be swept");
+        assertEq(IERC20(AERO).balanceOf(wallet), 0, "AERO should be swept");
+        assertGt(sharesAfter, sharesBefore, "Should have gained vault shares");
+
+        console.log("Vault shares gained:", (sharesAfter - sharesBefore) / 1e18);
+    }
+
+    function test_fork_sweepDust_depositsToYield() public onlyFork {
+        // First rebalance to move existing USDC to yield
+        vm.prank(wallet);
+        module.rebalance(USDC);
+
+        uint256 sharesBefore = vault.balanceOf(wallet);
+        assertGt(sharesBefore, 0, "Should have shares after rebalance");
+
+        // Now give wallet dust
+        uint256 degenAmount = 1000e18;
+        deal(DEGEN, wallet, degenAmount);
+
+        address[] memory dustTokens = new address[](1);
+        dustTokens[0] = DEGEN;
+
+        // Sweep should convert DEGEN -> USDC -> yield
+        vm.prank(wallet);
+        module.sweepDustAndCompound(AERODROME_ROUTER, USDC, dustTokens);
+
+        uint256 sharesAfter = vault.balanceOf(wallet);
+
+        // Since threshold is 0, all USDC should go to yield
+        assertGt(sharesAfter, sharesBefore, "Should have more vault shares");
+
+        console.log("Additional vault shares from sweep:", (sharesAfter - sharesBefore) / 1e18);
+    }
+
+    function test_fork_sweepDust_skipsZeroBalance() public onlyFork {
+        // Wallet has USDC but no DEGEN
+        uint256 sharesBefore = vault.balanceOf(wallet);
+
+        address[] memory dustTokens = new address[](1);
+        dustTokens[0] = DEGEN; // 0 balance
+
+        vm.prank(wallet);
+        module.sweepDustAndCompound(AERODROME_ROUTER, USDC, dustTokens);
+
+        // Should not revert, and shares should still increase because existing USDC gets deposited
+        // (the 10,000 USDC from setUp)
+        uint256 sharesAfter = vault.balanceOf(wallet);
+        assertGe(sharesAfter, sharesBefore, "Should not lose shares");
     }
 }

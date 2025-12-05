@@ -169,14 +169,158 @@ export async function submitMigrateStrategyUserOp(
   return submitAutomationUserOp(walletAddress, moduleCallData);
 }
 
-export async function submitSweepDustUserOp(walletAddress: Address): Promise<Hex> {
-  console.log(`[bundler] Sweep: ${walletAddress}`);
+export async function submitSweepDustUserOp(
+  walletAddress: Address,
+  dustTokens: Address[],
+  router: Address = CONTRACTS.AERODROME_ROUTER,
+  consolidationToken: Address = CONTRACTS.USDC
+): Promise<Hex> {
+  console.log(`[bundler] Sweep: ${walletAddress}, tokens: ${dustTokens.length}`);
   const moduleCallData = encodeFunctionData({
     abi: AUTO_YIELD_MODULE_ABI,
     functionName: "sweepDustAndCompound",
-    args: [],
+    args: [router, consolidationToken, dustTokens],
   });
   return submitAutomationUserOp(walletAddress, moduleCallData);
+}
+
+// Gas limits for user-signed sweep operations
+// Sweep is more expensive than sends due to multiple swaps
+const USER_SWEEP_GAS_LIMITS = {
+  callGasLimit: 2_000_000n, // Higher than sends - multiple Aerodrome swaps
+  verificationGasLimit: 150_000n,
+  preVerificationGas: 75_000n,
+  paymasterVerificationGasLimit: 50_000n,
+  paymasterPostOpGasLimit: 50_000n,
+} as const;
+
+// Prepare UserOp for user-signed sweep (ECDSA validator, like sends)
+export async function prepareUserSweepOp(
+  walletAddress: Address,
+  dustTokens: Address[],
+  router: Address = CONTRACTS.AERODROME_ROUTER,
+  consolidationToken: Address = CONTRACTS.USDC
+): Promise<{ userOp: UserOperationV07; userOpHash: Hex }> {
+  console.log(`[bundler] Prepare sweep: ${walletAddress}, tokens: ${dustTokens.length}`);
+
+  // 1. Build sweepDustAndCompound calldata
+  const moduleCallData = encodeFunctionData({
+    abi: AUTO_YIELD_MODULE_ABI,
+    functionName: "sweepDustAndCompound",
+    args: [router, consolidationToken, dustTokens],
+  });
+
+  // 2. Build Kernel execute calldata (same pattern as sends)
+  const executionCalldata = concat([
+    CONTRACTS.MODULE,
+    pad(toHex(0n), { size: 32 }),
+    moduleCallData,
+  ]);
+
+  const callData = encodeFunctionData({
+    abi: KERNEL_EXECUTE_ABI,
+    functionName: "execute",
+    args: [EXEC_MODE_DEFAULT, executionCalldata],
+  });
+
+  // 3. Get nonce using ECDSA validator (root validator, NOT automation)
+  const nonce = await getNonceForEcdsa(walletAddress);
+  const { maxFeePerGas, maxPriorityFeePerGas } = await getGasPrices();
+
+  console.log(`[bundler] Nonce: ${nonce}, Gas prices: ${maxFeePerGas}/${maxPriorityFeePerGas}`);
+
+  // 4. Build initial unsigned UserOp
+  const initialUserOp = {
+    sender: walletAddress,
+    nonce: toHex(nonce),
+    factory: null,
+    factoryData: null,
+    callData,
+    callGasLimit: toHex(USER_SWEEP_GAS_LIMITS.callGasLimit),
+    verificationGasLimit: toHex(USER_SWEEP_GAS_LIMITS.verificationGasLimit),
+    preVerificationGas: toHex(USER_SWEEP_GAS_LIMITS.preVerificationGas),
+    maxFeePerGas: toHex(maxFeePerGas),
+    maxPriorityFeePerGas: toHex(maxPriorityFeePerGas),
+    paymaster: null,
+    paymasterVerificationGasLimit: null,
+    paymasterPostOpGasLimit: null,
+    paymasterData: null,
+  };
+
+  // 5. Get paymaster stub data for gas limits
+  console.log(`[bundler] Getting paymaster stub data for gas limits...`);
+  const stubResult = await getPaymasterStubData(initialUserOp);
+
+  const pmVerificationGasLimit = stubResult.paymasterVerificationGasLimit
+    ?? toHex(USER_SWEEP_GAS_LIMITS.paymasterVerificationGasLimit);
+  const pmPostOpGasLimit = stubResult.paymasterPostOpGasLimit
+    ?? toHex(USER_SWEEP_GAS_LIMITS.paymasterPostOpGasLimit);
+
+  console.log(`[bundler] Paymaster: ${stubResult.paymaster}, verification gas: ${pmVerificationGasLimit}, postOp gas: ${pmPostOpGasLimit}`);
+
+  // 6. Build userOp with paymaster gas limits
+  const userOpWithPaymasterGas = {
+    sender: walletAddress,
+    nonce: toHex(nonce),
+    factory: null,
+    factoryData: null,
+    callData,
+    callGasLimit: toHex(USER_SWEEP_GAS_LIMITS.callGasLimit),
+    verificationGasLimit: toHex(USER_SWEEP_GAS_LIMITS.verificationGasLimit),
+    preVerificationGas: toHex(USER_SWEEP_GAS_LIMITS.preVerificationGas),
+    maxFeePerGas: toHex(maxFeePerGas),
+    maxPriorityFeePerGas: toHex(maxPriorityFeePerGas),
+    paymaster: stubResult.paymaster,
+    paymasterVerificationGasLimit: pmVerificationGasLimit,
+    paymasterPostOpGasLimit: pmPostOpGasLimit,
+    paymasterData: stubResult.paymasterData,
+  };
+
+  // 7. Get final paymaster signature
+  console.log(`[bundler] Getting final paymaster signature...`);
+  const paymasterResult = await getPaymasterData(userOpWithPaymasterGas);
+  console.log(`[bundler] Final paymaster data received`);
+
+  // 8. Build final UserOp
+  const userOp: UserOperationV07 = {
+    sender: walletAddress,
+    nonce: toHex(nonce),
+    factory: null,
+    factoryData: null,
+    callData,
+    callGasLimit: toHex(USER_SWEEP_GAS_LIMITS.callGasLimit),
+    verificationGasLimit: toHex(USER_SWEEP_GAS_LIMITS.verificationGasLimit),
+    preVerificationGas: toHex(USER_SWEEP_GAS_LIMITS.preVerificationGas),
+    maxFeePerGas: toHex(maxFeePerGas),
+    maxPriorityFeePerGas: toHex(maxPriorityFeePerGas),
+    paymaster: paymasterResult.paymaster,
+    paymasterVerificationGasLimit: pmVerificationGasLimit,
+    paymasterPostOpGasLimit: pmPostOpGasLimit,
+    paymasterData: paymasterResult.paymasterData,
+    signature: "0x", // Placeholder - user will sign
+  };
+
+  // 9. Compute hash for user to sign
+  const userOpHash = getUserOpHashV07({
+    sender: walletAddress,
+    nonce,
+    factory: null,
+    factoryData: null,
+    callData,
+    callGasLimit: USER_SWEEP_GAS_LIMITS.callGasLimit,
+    verificationGasLimit: USER_SWEEP_GAS_LIMITS.verificationGasLimit,
+    preVerificationGas: USER_SWEEP_GAS_LIMITS.preVerificationGas,
+    maxFeePerGas,
+    maxPriorityFeePerGas,
+    paymaster: paymasterResult.paymaster,
+    paymasterVerificationGasLimit: BigInt(pmVerificationGasLimit),
+    paymasterPostOpGasLimit: BigInt(pmPostOpGasLimit),
+    paymasterData: paymasterResult.paymasterData,
+  });
+
+  console.log(`[bundler] UserOp hash: ${userOpHash}`);
+
+  return { userOp, userOpHash };
 }
 
 // Prepare UserOp for user-signed send
