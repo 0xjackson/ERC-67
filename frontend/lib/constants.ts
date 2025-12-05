@@ -1,10 +1,10 @@
 import { type Address } from "viem";
 
-// Deployed contract addresses on Base Mainnet (v2 - December 4, 2024)
+// Deployed contract addresses on Base Mainnet (v3 - December 4, 2024)
 export const CONTRACTS = {
   // AutopilotFactory - deploys smart wallets with AutoYieldModule pre-installed
   FACTORY: (process.env.NEXT_PUBLIC_FACTORY_ADDRESS ||
-    "0xFBb91eb4234558b191c393985eF34282B551e81B") as Address,
+    "0xF8013d73a9791056eCFA1C0D0f68B29D17424f51") as Address,
 
   // AutoYieldModule - manages yield allocation for smart wallets
   MODULE: (process.env.NEXT_PUBLIC_MODULE_ADDRESS ||
