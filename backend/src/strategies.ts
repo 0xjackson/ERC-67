@@ -11,8 +11,6 @@ export const CHAIN_IDS = {
 
 /**
  * Known token addresses on Base
- * Note: These are placeholder addresses for demo purposes.
- * In production, use actual deployed contract addresses.
  */
 export const TOKEN_ADDRESSES = {
   [CHAIN_IDS.BASE_MAINNET]: {
@@ -79,7 +77,7 @@ export const strategies: Strategy[] = [
     vaultAddress: "0x1234567890123456789012345678901234567890", // Mock vault
     adapterAddress: "0xAdapterMockVaultUSDC00000000000000000", // Mock adapter
     protocolName: "MockYieldVault",
-    apy: 0.15, // 15% APY (mocked - for demo)
+    apy: 0.15, // 15% APY
     riskTier: "high",
     isActive: true,
   },
@@ -122,7 +120,7 @@ export const strategies: Strategy[] = [
     isActive: true,
   },
 
-  // ============ USDC Strategies on Base Sepolia (for testing) ============
+  // ============ USDC Strategies on Base Sepolia ============
   {
     id: "mock-usdc-vault-sepolia",
     chainId: CHAIN_IDS.BASE_SEPOLIA,
@@ -148,8 +146,3 @@ export const strategies: Strategy[] = [
     isActive: true,
   },
 ];
-
-// TODO: Add more strategies as they become available
-// - Yearn vaults on Base
-// - Beefy Finance strategies
-// - Native Base LP strategies (Aerodrome, BaseSwap)

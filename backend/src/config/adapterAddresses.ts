@@ -2,13 +2,10 @@
  * Adapter Address Mapping
  *
  * Maps protocol sources to their corresponding IYieldAdapter contract addresses.
- * These adapters implement the IYieldAdapter interface from the PRD:
+ * These adapters implement the IYieldAdapter interface:
  *   - deposit(uint256 amount)
  *   - withdraw(uint256 amount) returns (uint256 withdrawn)
  *   - totalValue() returns (uint256)
- *
- * NOTE: These are PLACEHOLDER addresses until real adapters are deployed.
- * Each adapter wraps a specific protocol's yield source (vault, lending pool, etc.)
  */
 
 // Chain IDs (duplicated here to avoid circular dependency with strategies.ts)

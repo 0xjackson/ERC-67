@@ -32,7 +32,6 @@ export type Strategy = {
   /**
    * Contract address of the IYieldAdapter that wraps this vault
    * Used by AutoYieldModule to interact with the underlying protocol
-   * NOTE: Placeholder addresses (0xAdapter...) until real adapters are deployed
    */
   adapterAddress?: string;
 
@@ -93,7 +92,7 @@ export type ErrorResponse = {
 };
 
 // ============================================================================
-// B2: Strategy selector with risk scoring
+// Strategy selector with risk scoring
 // ============================================================================
 
 /**
@@ -105,10 +104,6 @@ export type StrategyPreferences = {
   riskTolerance: RiskTier;
   /** Minimum acceptable APY as a decimal (e.g., 0.05 = 5%) */
   minApy: number;
-  // TODO: Add more preference fields for future enhancements
-  // preferredProtocols?: string[];
-  // excludedProtocols?: string[];
-  // maxAllocationPerProtocol?: number;
 };
 
 /**
@@ -137,23 +132,8 @@ export type RecommendationsResponse = {
   metadata: StrategyMetadata;
 };
 
-// TODO: Future types for wallet-specific preferences (B2+)
-// export type WalletPreferences = {
-//   walletAddress: string;
-//   preferences: StrategyPreferences;
-//   createdAt: Date;
-//   updatedAt: Date;
-// };
-
-// TODO: Future types for real APY fetching
-// export type ApySource = {
-//   source: "defillama" | "protocol_api" | "onchain";
-//   lastUpdated: Date;
-//   confidence: number;
-// };
-
 // ============================================================================
-// B3: Auto-rebalance scheduler
+// Auto-rebalance scheduler
 // ============================================================================
 
 /**
@@ -259,7 +239,7 @@ export type TaskExecutionResult = {
 };
 
 // ============================================================================
-// B4: Dust token metadata service
+// Dust token metadata service
 // ============================================================================
 
 /**

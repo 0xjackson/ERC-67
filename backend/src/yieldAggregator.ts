@@ -356,7 +356,7 @@ async function getAaveVaults(
         tvlUsd,
         apy,
         baseApy: apy, // Aave base APY is the same as total (no separate rewards in this query)
-        rewards: [], // TODO: Could add incentives from the incentives field if needed
+        rewards: [],
         source: "aave",
         chainId: market.chain.chainId,
         underlyingAsset: reserve.underlyingToken.symbol,
@@ -598,7 +598,7 @@ export function printVaultSummary(vault: Vault): void {
 }
 
 // =============================================================================
-// CLI Entry Point (for testing)
+// CLI Entry Point
 // =============================================================================
 
 async function main() {

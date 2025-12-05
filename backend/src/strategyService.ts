@@ -209,7 +209,7 @@ export function getSupportedChainIds(): number[] {
 }
 
 // ============================================================================
-// B2: Strategy selector with risk scoring
+// Strategy selector with risk scoring
 // ============================================================================
 
 /**
@@ -404,70 +404,3 @@ export async function getExecutableRecommendedStrategies(
     };
   }
 }
-
-// TODO: Future implementation for wallet-specific preferences
-// export async function getWalletPreferences(
-//   walletAddress: string
-// ): Promise<StrategyPreferences | null> {
-//   // Fetch user preference profile from DB using wallet address
-//   // For now, return null to use defaults
-//   console.log(`getWalletPreferences called for ${walletAddress} - not yet implemented`);
-//   return null;
-// }
-
-// TODO: Future implementation for saving wallet preferences
-// export async function saveWalletPreferences(
-//   walletAddress: string,
-//   preferences: StrategyPreferences
-// ): Promise<void> {
-//   // Save user preferences to DB
-//   console.log(`saveWalletPreferences called for ${walletAddress} - not yet implemented`);
-// }
-
-// ============================================================================
-// TODO: Future implementations for real APY fetching
-// ============================================================================
-
-/**
- * TODO: Fetch real APY data from external sources and update strategy records
- *
- * This function would be called periodically (e.g., via cron/scheduler in B3)
- * to keep APY values fresh.
- *
- * Sources to integrate:
- * - DeFiLlama API: https://yields.llama.fi/pools
- * - Protocol-specific APIs (Aave, Moonwell, Compound)
- * - On-chain rate calculations
- */
-// export async function refreshApyForAllStrategies(): Promise<void> {
-//   // Example DeFiLlama integration:
-//   // const response = await fetch("https://yields.llama.fi/pools");
-//   // const pools = await response.json();
-//   //
-//   // for (const strategy of strategies) {
-//   //   const match = pools.data.find(
-//   //     (p: any) =>
-//   //       p.chain === "Base" &&
-//   //       p.project === strategy.protocolName.toLowerCase() &&
-//   //       p.symbol.includes(strategy.token)
-//   //   );
-//   //   if (match) {
-//   //     strategy.apy = match.apy / 100; // DeFiLlama returns percentage
-//   //   }
-//   // }
-//   console.log("refreshApyForAllStrategies() called - not yet implemented");
-// }
-
-/**
- * TODO: Fetch APY for a single strategy from its specific protocol
- */
-// export async function fetchApyForStrategy(strategyId: string): Promise<number> {
-//   const strategy = strategies.find((s) => s.id === strategyId);
-//   if (!strategy) throw new Error(`Strategy not found: ${strategyId}`);
-//
-//   // Protocol-specific fetching logic would go here
-//   // e.g., for Aave: query their subgraph or on-chain rates
-//   // e.g., for Moonwell: use their API or read from contracts
-//
-//   return strategy.apy; // For now, return mocked value
-// }

@@ -98,7 +98,6 @@ export function getRegisteredWalletCount(): number {
 
 // ============================================================================
 // Wallet Settings Storage (in-memory)
-// TODO: Replace with database (PostgreSQL) for persistence
 // ============================================================================
 
 interface StoredSettings {
@@ -810,7 +809,7 @@ app.get("/chains", (_req: Request, res: Response) => {
 });
 
 // ============================================================================
-// B3: Rebalance Task Endpoints
+// Rebalance Task Endpoints
 // ============================================================================
 
 /**
@@ -1031,7 +1030,7 @@ app.get("/scheduler/status", (_req: Request, res: Response) => {
 });
 
 // ============================================================================
-// B4: Dust Token Endpoints
+// Dust Token Endpoints
 // ============================================================================
 
 /**
@@ -1513,7 +1512,7 @@ app.listen(PORT, () => {
 ║    GET  /health              - Health check               ║
 ║    GET  /strategies          - List strategies by token   ║
 ║    GET  /recommend           - Best strategy (highest APY)║
-║    GET  /recommendations     - Strategies by prefs (B2)   ║
+║    GET  /recommendations     - Strategies by preferences  ║
 ║    GET  /tokens              - Available tokens on chain  ║
 ║    GET  /chains              - Supported chain IDs        ║
 ║  Wallet Registry:                                         ║
@@ -1523,15 +1522,15 @@ app.listen(PORT, () => {
 ║    GET  /wallet/:address/summary - Dashboard summary      ║
 ║    GET  /wallet/:address/settings - Get wallet settings   ║
 ║    POST /wallet/:address/settings - Update settings       ║
-║  Scheduler (B3):                                          ║
+║  Scheduler:                                               ║
 ║    GET  /rebalance-tasks     - List all tasks             ║
 ║    POST /rebalance-tasks     - Create a task              ║
 ║    POST /rebalance-tasks/:id/run - Trigger task manually  ║
 ║    DELETE /rebalance-tasks/:id   - Remove a task          ║
-║  Dust Service (B4):                                       ║
+║  Dust Service:                                            ║
 ║    GET  /dust/tokens         - List dust tokens           ║
 ║    GET  /dust/config         - Get dust sweep config      ║
-║    GET  /dust/summary        - Wallet dust summary (stub) ║
+║    GET  /dust/summary        - Wallet dust summary        ║
 ║  Admin:                                                   ║
 ║    POST /admin/refresh-strategies - Refresh strategy cache║
 ║    GET  /admin/cache-status  - Check cache status         ║

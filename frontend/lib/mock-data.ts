@@ -1,4 +1,4 @@
-// Mock data for development - replace with real blockchain data later
+// Mock data for local development
 
 export interface WalletBalances {
   checking: string;

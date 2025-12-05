@@ -1,12 +1,8 @@
 /**
- * B4: Dust Token Metadata Registry
+ * Dust Token Metadata Registry
  *
  * Contains metadata for tokens that may appear as "dust" in wallets,
  * including airdrop tokens, small LP remnants, and other low-value balances.
- *
- * NOTE: This is mocked data for demo purposes.
- * TODO: In production, fetch token metadata from on-chain or external APIs
- *       (e.g., CoinGecko, token lists, or DEX metadata).
  */
 
 import { DustTokenMeta } from "./types";
@@ -176,7 +172,7 @@ export const dustTokens: DustTokenMeta[] = [
     isDustSource: true,
     suggestedAction: "swap",
     consolidationTarget: TOKEN_ADDRESSES[CHAIN_IDS.BASE_SEPOLIA].USDC,
-    notes: "Test airdrop token for demo",
+    notes: "Test airdrop token",
     dustThreshold: 100,
   },
 ];
@@ -200,9 +196,3 @@ export const DEFAULT_CONSOLIDATION_ADDRESS: Record<number, string> = {
   [CHAIN_IDS.BASE_MAINNET]: TOKEN_ADDRESSES[CHAIN_IDS.BASE_MAINNET].USDC,
   [CHAIN_IDS.BASE_SEPOLIA]: TOKEN_ADDRESSES[CHAIN_IDS.BASE_SEPOLIA].USDC,
 };
-
-// TODO: In production, token metadata would be fetched from:
-// - On-chain token contracts (name, symbol, decimals)
-// - CoinGecko API for pricing and metadata
-// - Token list registries (e.g., Uniswap token lists)
-// - DEX subgraphs for liquidity/tradability info

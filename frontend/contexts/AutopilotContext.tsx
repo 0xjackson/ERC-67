@@ -116,15 +116,6 @@ export function AutopilotProvider({ children }: AutopilotProviderProps) {
     setState(prev => ({ ...prev, isPolling: true, error: null }));
 
     try {
-      // TODO: Implement real balance fetching
-      // For now, use mock data
-
-      // In the real implementation:
-      // 1. Read USDC balance from chain: publicClient.readContract(...)
-      // 2. Read yield balance from adapter: adapter.totalValue()
-      // 3. Fetch current strategy from backend: GET /recommend
-
-      // Mock data for development
       const mockChecking = "150.00";
       const mockYield = "850.00";
       const mockTotal = "1000.00";

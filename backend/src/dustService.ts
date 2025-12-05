@@ -1,5 +1,5 @@
 /**
- * B4: Dust Token Metadata Service
+ * Dust Token Metadata Service
  *
  * Service layer for managing dust token metadata and configuration.
  * Provides functions to query dust tokens, get consolidation config,

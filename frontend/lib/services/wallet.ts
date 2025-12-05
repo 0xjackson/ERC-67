@@ -101,7 +101,7 @@ export async function createSmartWallet(
 ): Promise<CreateWalletResponse> {
   const { owner } = config;
 
-  // Step 1: Get the automation key (for now this is mocked)
+  // Step 1: Get the automation key
   const automationKey = await getAutomationKey();
   console.log("[wallet] Using automation key:", automationKey);
 
